@@ -96,6 +96,7 @@ class User(Base):
     role = Column(Enum(UserRole, native_enum=False), nullable=False)
     profile_image = Column(String)
     bio = Column(Text)
+    stripe_customer_id = Column(String, index=True)  # for saved payment methods
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

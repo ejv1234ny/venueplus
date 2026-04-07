@@ -42,11 +42,29 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _ensure_stripe_customer(db: Session, user: User) -> str:
+    """Returns the Stripe customer id for a user, creating one if missing."""
+    if user.stripe_customer_id:
+        return user.stripe_customer_id
+    c = p.create_customer(
+        email=user.email,
+        name=f"{user.first_name} {user.last_name}".strip(),
+        metadata={"user_id": str(user.id)},
+        idempotency_key=f"customer_user_{user.id}",
+    )
+    user.stripe_customer_id = c["id"]
+    db.commit()
+    return c["id"]
+
+
 def _ensure_stripe_account(db: Session, user: User) -> StripeAccount:
     sa = db.query(StripeAccount).filter(StripeAccount.user_id == user.id).first()
     if sa:
         return sa
-    acct = p.create_connect_account(email=user.email)
+    acct = p.create_connect_account(
+        email=user.email,
+        idempotency_key=f"connect_acct_user_{user.id}",
+    )
     sa = StripeAccount(
         user_id=user.id,
         stripe_account_id=acct["id"],
@@ -180,10 +198,16 @@ def checkout(booking_id: int,
         }
 
     breakdown, lines = _compute_booking_payouts(db, booking)
+
+    # Ensure the renter has a Stripe Customer (for saved cards across bookings)
+    customer_id = _ensure_stripe_customer(db, current_user)
+
     intent = p.create_payment_intent(
         amount_cents=breakdown["total_charged_cents"],
         customer_email=current_user.email,
         metadata={"booking_id": str(booking.id), "renter_id": str(current_user.id)},
+        customer_id=customer_id,
+        idempotency_key=f"pi_booking_{booking.id}",
     )
 
     payment = Payment(
@@ -272,7 +296,10 @@ def capture(booking_id: int,
     if payment.status != PaymentStatus.AUTHORIZED:
         raise HTTPException(400, f"Payment is {payment.status.value}")
 
-    result = p.capture_payment_intent(payment.stripe_payment_intent_id)
+    result = p.capture_payment_intent(
+        payment.stripe_payment_intent_id,
+        idempotency_key=f"capture_payment_{payment.id}",
+    )
     payment.status = PaymentStatus.CAPTURED
     payment.captured_at = _now()
     payment.stripe_charge_id = result.get("charge_id")
@@ -319,6 +346,7 @@ def refund(booking_id: int, refund_pct: int = 100,
         payment.stripe_payment_intent_id,
         amount_cents=refund_amount,
         reason="cancellation",
+        idempotency_key=f"refund_payment_{payment.id}_pct{refund_pct}",
     )
     payment.refunded_cents += refund_amount
     payment.refunded_at = _now()
@@ -387,6 +415,7 @@ def release_payouts(booking_id: int,
                 metadata={"booking_id": str(booking.id),
                           "payout_id": str(po.id),
                           "recipient_type": po.recipient_type},
+                idempotency_key=f"transfer_payout_{po.id}",
             )
             po.stripe_transfer_id = t["id"]
             po.status = PayoutStatus.SENT

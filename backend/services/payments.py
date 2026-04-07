@@ -96,10 +96,28 @@ def _sim_id(prefix: str) -> str:
 # ---------------------------------------------------------------------------
 # Public API — same shape regardless of backend
 # ---------------------------------------------------------------------------
-def create_connect_account(email: str, country: str = "US") -> dict:
+def create_customer(email: str, name: Optional[str] = None,
+                    metadata: Optional[dict] = None,
+                    idempotency_key: Optional[str] = None) -> dict:
+    """Create a Stripe Customer for saved payment methods + receipts."""
     if _has_real_stripe():
         s = _stripe()
-        acct = s.Account.create(
+        kwargs = dict(email=email, metadata=metadata or {})
+        if name:
+            kwargs["name"] = name
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        c = s.Customer.create(**kwargs, **ikw)
+        return {"id": c.id, "email": c.email}
+    cid = _sim_id("cus")
+    _SIM.setdefault("customers", {})[cid] = {"email": email, "name": name}
+    return {"id": cid, "email": email}
+
+
+def create_connect_account(email: str, country: str = "US",
+                           idempotency_key: Optional[str] = None) -> dict:
+    if _has_real_stripe():
+        s = _stripe()
+        kwargs = dict(
             type="express",
             country=country,
             email=email,
@@ -108,6 +126,8 @@ def create_connect_account(email: str, country: str = "US") -> dict:
                 "transfers": {"requested": True},
             },
         )
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        acct = s.Account.create(**kwargs, **ikw)
         return {"id": acct.id, "details_submitted": acct.details_submitted,
                 "charges_enabled": acct.charges_enabled,
                 "payouts_enabled": acct.payouts_enabled}
@@ -158,11 +178,18 @@ def fetch_account(account_id: str) -> dict:
 
 
 def create_payment_intent(amount_cents: int, customer_email: str,
-                          metadata: dict) -> dict:
-    """Authorize-only (manual capture) intent."""
+                          metadata: dict,
+                          customer_id: Optional[str] = None,
+                          idempotency_key: Optional[str] = None) -> dict:
+    """Authorize-only (manual capture) intent.
+
+    If customer_id is provided, attaches the PI to that Stripe Customer so
+    the renter can save payment methods. idempotency_key prevents duplicate
+    PaymentIntents when the client retries.
+    """
     if _has_real_stripe():
         s = _stripe()
-        pi = s.PaymentIntent.create(
+        kwargs = dict(
             amount=amount_cents,
             currency="usd",
             capture_method="manual",
@@ -170,6 +197,11 @@ def create_payment_intent(amount_cents: int, customer_email: str,
             metadata=metadata,
             automatic_payment_methods={"enabled": True},
         )
+        if customer_id:
+            kwargs["customer"] = customer_id
+            kwargs["setup_future_usage"] = "off_session"
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        pi = s.PaymentIntent.create(**kwargs, **ikw)
         return {"id": pi.id, "client_secret": pi.client_secret, "status": pi.status}
     pid = _sim_id("pi")
     _SIM["intents"][pid] = {
@@ -191,10 +223,12 @@ def simulate_payment_success(intent_id: str) -> dict:
     return {"id": intent_id, "status": "requires_capture"}
 
 
-def capture_payment_intent(intent_id: str) -> dict:
+def capture_payment_intent(intent_id: str,
+                           idempotency_key: Optional[str] = None) -> dict:
     if _has_real_stripe():
         s = _stripe()
-        pi = s.PaymentIntent.capture(intent_id)
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        pi = s.PaymentIntent.capture(intent_id, **ikw)
         charge_id = pi.latest_charge if hasattr(pi, "latest_charge") else None
         return {"id": pi.id, "status": pi.status, "charge_id": charge_id}
     pi = _SIM["intents"].get(intent_id)
@@ -206,7 +240,8 @@ def capture_payment_intent(intent_id: str) -> dict:
 
 
 def refund_payment(intent_id: str, amount_cents: Optional[int] = None,
-                   reason: Optional[str] = None) -> dict:
+                   reason: Optional[str] = None,
+                   idempotency_key: Optional[str] = None) -> dict:
     if _has_real_stripe():
         s = _stripe()
         kwargs = {"payment_intent": intent_id, "reverse_transfer": True}
@@ -214,7 +249,8 @@ def refund_payment(intent_id: str, amount_cents: Optional[int] = None,
             kwargs["amount"] = amount_cents
         if reason:
             kwargs["reason"] = "requested_by_customer"
-        r = s.Refund.create(**kwargs)
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        r = s.Refund.create(**kwargs, **ikw)
         return {"id": r.id, "amount": r.amount, "status": r.status}
     pi = _SIM["intents"].get(intent_id)
     if not pi:
@@ -227,15 +263,18 @@ def refund_payment(intent_id: str, amount_cents: Optional[int] = None,
 
 
 def create_transfer(amount_cents: int, destination_account_id: str,
-                    transfer_group: str, metadata: dict) -> dict:
+                    transfer_group: str, metadata: dict,
+                    idempotency_key: Optional[str] = None) -> dict:
     if _has_real_stripe():
         s = _stripe()
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
         t = s.Transfer.create(
             amount=amount_cents,
             currency="usd",
             destination=destination_account_id,
             transfer_group=transfer_group,
             metadata=metadata,
+            **ikw,
         )
         return {"id": t.id, "amount": t.amount, "destination": t.destination}
     tid = _sim_id("tr")
