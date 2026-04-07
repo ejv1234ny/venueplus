@@ -370,40 +370,58 @@ def refund(booking_id: int, refund_pct: int = 100,
 
 
 # ---------------- RELEASE PAYOUTS ----------------
-@router.post("/release-payouts/{booking_id}")
-def release_payouts(booking_id: int,
-                    current_user: User = Depends(get_current_active_user),
-                    db: Session = Depends(get_db)):
-    """Triggered after event end (manually or by cron). Fans out transfers
-    to all SCHEDULED payouts whose recipients have a connected Stripe acct.
+@router.post("/release-payouts/cron")
+def release_payouts_cron(request: Request, db: Session = Depends(get_db)):
+    """Cron-friendly: finds every CONFIRMED booking whose end_datetime is
+    >24h ago and whose payment is captured, and runs the per-booking
+    release-payouts logic on each. Idempotent — already-sent payouts are
+    skipped because release_for_booking only acts on SCHEDULED status.
+
+    Protected by CRON_SECRET env var (Bearer token in Authorization header).
+    Set this in Railway and pass it from the cron config.
     """
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(404, "Not found")
-    venue = db.query(Venue).filter(Venue.id == booking.venue_id).first()
-    if (current_user.role != UserRole.ADMIN
-            and venue.owner_id != current_user.id):
-        raise HTTPException(403, "Only host or admin")
-    if _aware(booking.end_datetime) > _now():
-        raise HTTPException(400, "Event has not ended yet")
+    from datetime import timedelta
+    expected = os.getenv("CRON_SECRET")
+    # In prod (CRON_SECRET set) require it. In dev (unset) allow direct calls.
+    if expected:
+        provided = request.headers.get("authorization", "")
+        if provided != f"Bearer {expected}":
+            raise HTTPException(401, "Invalid cron secret")
+    cutoff = _now() - timedelta(hours=24)
 
+    eligible = db.query(Booking).filter(
+        Booking.status == BookingStatus.CONFIRMED,
+        Booking.end_datetime < cutoff,
+    ).all()
+
+    summary = {"checked": len(eligible), "bookings": [], "total_sent": 0,
+               "total_skipped": 0}
+    for b in eligible:
+        payment = db.query(Payment).filter(Payment.booking_id == b.id).first()
+        if not payment or payment.status not in (PaymentStatus.CAPTURED,
+                                                 PaymentStatus.PARTIALLY_REFUNDED):
+            continue
+        result = _release_for_booking(db, b)
+        summary["bookings"].append({"booking_id": b.id, **result})
+        summary["total_sent"] += result["sent"]
+        summary["total_skipped"] += result["skipped"]
+    return summary
+
+
+def _release_for_booking(db: Session, booking: Booking) -> dict:
+    """Internal helper used by both the per-booking endpoint and the cron."""
     payment = db.query(Payment).filter(Payment.booking_id == booking.id).first()
-    if not payment or payment.status not in (PaymentStatus.CAPTURED,
-                                             PaymentStatus.PARTIALLY_REFUNDED):
-        raise HTTPException(400, "Payment not captured")
-
     payouts = db.query(Payout).filter(
         Payout.payment_id == payment.id,
         Payout.status == PayoutStatus.SCHEDULED,
     ).all()
-
     sent = 0
     skipped = 0
     for po in payouts:
         sa = db.query(StripeAccount).filter(
             StripeAccount.user_id == po.recipient_user_id).first()
         if not sa or not sa.payouts_enabled:
-            po.status = PayoutStatus.PENDING  # try again next run
+            po.status = PayoutStatus.PENDING
             po.error_message = "recipient has no payout-enabled Stripe account"
             skipped += 1
             continue
@@ -426,7 +444,7 @@ def release_payouts(booking_id: int,
                 type=NotificationType.PAYOUT_SENT,
                 title=f"Payout sent: ${p.dollars(po.net_cents)}",
                 body=f"For booking #{booking.id}",
-                link=f"/payouts",
+                link="/payouts",
             ))
         except Exception as e:
             po.status = PayoutStatus.FAILED
@@ -435,6 +453,30 @@ def release_payouts(booking_id: int,
     booking.status = BookingStatus.COMPLETED
     db.commit()
     return {"sent": sent, "skipped": skipped, "total": len(payouts)}
+
+
+@router.post("/release-payouts/{booking_id}")
+def release_payouts(booking_id: int,
+                    current_user: User = Depends(get_current_active_user),
+                    db: Session = Depends(get_db)):
+    """Triggered after event end (manually). Fans out transfers to all
+    SCHEDULED payouts. Used by host UI; cron uses /release-payouts/cron."""
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Not found")
+    venue = db.query(Venue).filter(Venue.id == booking.venue_id).first()
+    if (current_user.role != UserRole.ADMIN
+            and venue.owner_id != current_user.id):
+        raise HTTPException(403, "Only host or admin")
+    if _aware(booking.end_datetime) > _now():
+        raise HTTPException(400, "Event has not ended yet")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking.id).first()
+    if not payment or payment.status not in (PaymentStatus.CAPTURED,
+                                             PaymentStatus.PARTIALLY_REFUNDED):
+        raise HTTPException(400, "Payment not captured")
+
+    return _release_for_booking(db, booking)
 
 
 # ---------------- WEBHOOK ----------------

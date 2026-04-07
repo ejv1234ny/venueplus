@@ -285,6 +285,28 @@ def create_transfer(amount_cents: int, destination_account_id: str,
     return {"id": tid, "amount": amount_cents, "destination": destination_account_id}
 
 
+def reverse_transfer(transfer_id: str, amount_cents: Optional[int] = None,
+                     idempotency_key: Optional[str] = None) -> dict:
+    """Claw back funds from a transfer that already landed in a connected
+    account. Used during refunds when the payout has already been sent."""
+    if _has_real_stripe():
+        s = _stripe()
+        kwargs = {}
+        if amount_cents is not None:
+            kwargs["amount"] = amount_cents
+        ikw = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        rev = s.Transfer.create_reversal(transfer_id, **kwargs, **ikw)
+        return {"id": rev.id, "amount": rev.amount, "transfer": transfer_id}
+    # Sim
+    t = _SIM["transfers"].get(transfer_id)
+    if not t:
+        raise RuntimeError("transfer not found")
+    amt = amount_cents if amount_cents is not None else t["amount"]
+    rid = _sim_id("trr")
+    _SIM.setdefault("reversals", {})[rid] = {"transfer": transfer_id, "amount": amt}
+    return {"id": rid, "amount": amt, "transfer": transfer_id}
+
+
 def verify_webhook(payload: bytes, sig_header: str) -> dict:
     """Verifies a real Stripe webhook. In sim mode, just parses JSON."""
     if _has_real_stripe():

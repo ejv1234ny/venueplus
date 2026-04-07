@@ -262,12 +262,36 @@ def cancel_booking(booking_id: int,
             payment.refund_reason = f"cancellation {refund_pct}%"
             for po in db.query(Payout).filter(Payout.payment_id == payment.id).all():
                 if po.status in (PayoutStatus.PENDING, PayoutStatus.SCHEDULED):
+                    # Not sent yet → just adjust the row
                     if refund_pct == 100:
                         po.status = PayoutStatus.REVERSED
                     else:
                         po.gross_cents = int(round(po.gross_cents * (100 - refund_pct) / 100))
                         po.platform_fee_cents = int(round(po.gross_cents * p_svc.PLATFORM_FEE_PCT))
                         po.net_cents = po.gross_cents - po.platform_fee_cents
+                elif po.status == PayoutStatus.SENT and po.stripe_transfer_id:
+                    # Money already left for the connected account — claw it
+                    # back via Stripe Transfer reversal.
+                    clawback = po.net_cents if refund_pct == 100 else int(
+                        round(po.net_cents * refund_pct / 100))
+                    try:
+                        p_svc.reverse_transfer(
+                            po.stripe_transfer_id,
+                            amount_cents=clawback,
+                            idempotency_key=f"reverse_payout_{po.id}_pct{refund_pct}",
+                        )
+                        if refund_pct == 100:
+                            po.status = PayoutStatus.REVERSED
+                            po.error_message = "reversed due to renter cancellation"
+                        else:
+                            po.net_cents = po.net_cents - clawback
+                            po.gross_cents = int(round(po.gross_cents * (100 - refund_pct) / 100))
+                            po.error_message = f"partially reversed ({refund_pct}%)"
+                    except Exception as e:
+                        # Reversal can fail if the connected account has
+                        # insufficient balance — flag it for admin.
+                        po.error_message = f"reversal failed: {e}"[:500]
+                        print(f"[refund] transfer reversal failed for payout {po.id}: {e}")
         except Exception as e:
             print(f"[refund] error: {e}")
 
