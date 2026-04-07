@@ -16,7 +16,7 @@ import secrets
 import time
 from typing import Optional
 
-PLATFORM_FEE_PCT = 0.07
+PLATFORM_FEE_PCT = 0.12
 STRIPE_FEE_PCT = 0.029   # 2.9%
 STRIPE_FEE_FIXED_CENTS = 30
 

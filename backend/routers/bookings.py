@@ -266,7 +266,7 @@ def cancel_booking(booking_id: int,
                         po.status = PayoutStatus.REVERSED
                     else:
                         po.gross_cents = int(round(po.gross_cents * (100 - refund_pct) / 100))
-                        po.platform_fee_cents = int(round(po.gross_cents * 0.07))
+                        po.platform_fee_cents = int(round(po.gross_cents * p_svc.PLATFORM_FEE_PCT))
                         po.net_cents = po.gross_cents - po.platform_fee_cents
         except Exception as e:
             print(f"[refund] error: {e}")
