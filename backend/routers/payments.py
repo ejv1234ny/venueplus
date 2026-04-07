@@ -464,6 +464,59 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 booking.status = BookingStatus.DISPUTED
                 db.commit()
 
+    elif etype == "charge.refunded":
+        pi_id = data.get("payment_intent")
+        payment = db.query(Payment).filter(
+            Payment.stripe_payment_intent_id == pi_id).first()
+        if payment:
+            refunded_amt = data.get("amount_refunded", 0)
+            payment.refunded_cents = refunded_amt
+            payment.refunded_at = _now()
+            payment.status = (PaymentStatus.REFUNDED
+                              if refunded_amt >= payment.total_charged_cents
+                              else PaymentStatus.PARTIALLY_REFUNDED)
+            db.commit()
+
+    elif etype == "transfer.created":
+        # Reflect the destination + amount on the matching Payout row
+        transfer_id = data.get("id")
+        meta = data.get("metadata", {}) or {}
+        payout_id = meta.get("payout_id")
+        if payout_id:
+            po = db.query(Payout).filter(Payout.id == int(payout_id)).first()
+            if po:
+                po.stripe_transfer_id = transfer_id
+                po.status = PayoutStatus.SENT
+                po.sent_at = _now()
+                db.commit()
+
+    elif etype == "transfer.failed" or etype == "transfer.reversed":
+        transfer_id = data.get("id")
+        po = db.query(Payout).filter(
+            Payout.stripe_transfer_id == transfer_id).first()
+        if po:
+            po.status = (PayoutStatus.FAILED if etype == "transfer.failed"
+                         else PayoutStatus.REVERSED)
+            po.error_message = data.get("failure_message") or data.get("reversal_reason", "")
+            db.commit()
+            # Notify recipient + admin
+            db.add(Notification(
+                user_id=po.recipient_user_id,
+                type=NotificationType.SYSTEM,
+                title=f"Payout {po.status.value}",
+                body=f"Booking #{po.booking_id} payout of ${p.dollars(po.net_cents)} {po.status.value}",
+                link="/payouts",
+            ))
+            db.commit()
+
+    elif etype == "payment_intent.canceled":
+        pi_id = data.get("id")
+        payment = db.query(Payment).filter(
+            Payment.stripe_payment_intent_id == pi_id).first()
+        if payment:
+            payment.status = PaymentStatus.CANCELED
+            db.commit()
+
     return {"received": True, "type": etype}
 
 
