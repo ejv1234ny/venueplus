@@ -185,7 +185,8 @@ def get_booking(booking_id: int,
 def confirm_booking(booking_id: int,
                     current_user: User = Depends(get_current_active_user),
                     db: Session = Depends(get_db)):
-    """Host accepts the booking. (After payment integration this will be auto.)"""
+    """Host accepts the booking. If a payment has been authorized for this
+    booking, also captures it via Stripe (or sim)."""
     b = db.query(Booking).filter(Booking.id == booking_id).first()
     if not b:
         raise HTTPException(404, "Booking not found")
@@ -194,6 +195,19 @@ def confirm_booking(booking_id: int,
         raise HTTPException(403, "Only the host can confirm")
     if b.status not in (BookingStatus.AWAITING_PAYMENT, BookingStatus.PENDING):
         raise HTTPException(400, f"Cannot confirm from status {b.status.value}")
+
+    # If there's an authorized payment, capture it now
+    from models import Payment, PaymentStatus, Payout, PayoutStatus
+    from services import payments as p_svc
+    payment = db.query(Payment).filter(Payment.booking_id == b.id).first()
+    if payment and payment.status == PaymentStatus.AUTHORIZED:
+        result = p_svc.capture_payment_intent(payment.stripe_payment_intent_id)
+        payment.status = PaymentStatus.CAPTURED
+        payment.captured_at = datetime.now(timezone.utc)
+        payment.stripe_charge_id = result.get("charge_id")
+        db.query(Payout).filter(Payout.payment_id == payment.id).update(
+            {Payout.status: PayoutStatus.SCHEDULED})
+
     b.status = BookingStatus.CONFIRMED
     _notify(db, b.renter_id, NotificationType.BOOKING_CONFIRMED,
             f"Your booking at {venue.title} is confirmed",
@@ -229,14 +243,43 @@ def cancel_booking(booking_id: int,
     else:
         refund_pct = 0
 
-    b.status = BookingStatus.CANCELLED
+    # If there's a captured/authorized payment, issue the refund now
+    from models import Payment, PaymentStatus, Payout, PayoutStatus
+    from services import payments as p_svc
+    payment = db.query(Payment).filter(Payment.booking_id == b.id).first()
+    refund_amount = 0
+    if payment and payment.status in (PaymentStatus.AUTHORIZED, PaymentStatus.CAPTURED) and refund_pct > 0:
+        refund_amount = int(round(payment.total_charged_cents * refund_pct / 100))
+        try:
+            p_svc.refund_payment(
+                payment.stripe_payment_intent_id,
+                amount_cents=refund_amount, reason="cancellation",
+            )
+            payment.refunded_cents += refund_amount
+            payment.refunded_at = _now()
+            payment.status = (PaymentStatus.REFUNDED if refund_amount == payment.total_charged_cents
+                              else PaymentStatus.PARTIALLY_REFUNDED)
+            payment.refund_reason = f"cancellation {refund_pct}%"
+            for po in db.query(Payout).filter(Payout.payment_id == payment.id).all():
+                if po.status in (PayoutStatus.PENDING, PayoutStatus.SCHEDULED):
+                    if refund_pct == 100:
+                        po.status = PayoutStatus.REVERSED
+                    else:
+                        po.gross_cents = int(round(po.gross_cents * (100 - refund_pct) / 100))
+                        po.platform_fee_cents = int(round(po.gross_cents * 0.07))
+                        po.net_cents = po.gross_cents - po.platform_fee_cents
+        except Exception as e:
+            print(f"[refund] error: {e}")
+
+    b.status = (BookingStatus.REFUNDED if refund_pct == 100 and payment
+                else BookingStatus.CANCELLED)
     other = b.renter_id if current_user.id != b.renter_id else venue.owner_id
     _notify(db, other, NotificationType.BOOKING_CANCELLED,
             f"Booking at {venue.title} cancelled",
-            f"Refund eligibility: {refund_pct}%",
+            f"Refund: {refund_pct}% (${refund_amount/100:.2f})",
             link=f"/bookings/{b.id}", payload={"booking_id": b.id, "refund_pct": refund_pct})
     db.commit()
-    return {"ok": True, "refund_pct": refund_pct}
+    return {"ok": True, "refund_pct": refund_pct, "refund_amount": refund_amount / 100}
 
 
 @router.post("/{booking_id}/complete")

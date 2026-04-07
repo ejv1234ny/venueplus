@@ -63,6 +63,26 @@ class ReviewTargetType(str, enum.Enum):
     PROVIDER = "provider"
     RENTER = "renter"
 
+
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"               # PI created, awaiting card
+    REQUIRES_ACTION = "requires_action"
+    AUTHORIZED = "authorized"         # held but not captured
+    CAPTURED = "captured"             # money in VenuePlus balance
+    PARTIALLY_REFUNDED = "partially_refunded"
+    REFUNDED = "refunded"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class PayoutStatus(str, enum.Enum):
+    PENDING = "pending"               # waiting for event end + capture
+    SCHEDULED = "scheduled"
+    SENT = "sent"
+    FAILED = "failed"
+    REVERSED = "reversed"              # refund clawed it back
+    SKIPPED = "skipped"                # provider no-show etc.
+
 # User model
 class User(Base):
     __tablename__ = "users"
@@ -361,6 +381,79 @@ class Notification(Base):
     payload = Column(JSON)             # arbitrary structured data
     read_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Stripe Connect: connected accounts (one per host or provider user)
+# ---------------------------------------------------------------------------
+class StripeAccount(Base):
+    __tablename__ = "stripe_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    stripe_account_id = Column(String, unique=True, index=True, nullable=False)  # acct_xxx
+    onboarding_complete = Column(Boolean, default=False)
+    charges_enabled = Column(Boolean, default=False)
+    payouts_enabled = Column(Boolean, default=False)
+    details_submitted = Column(Boolean, default=False)
+    requirements = Column(JSON)        # mirror of Stripe requirements_due
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Payments — one per booking
+# ---------------------------------------------------------------------------
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), unique=True, nullable=False)
+    stripe_payment_intent_id = Column(String, unique=True, index=True)
+    stripe_customer_id = Column(String)
+    stripe_charge_id = Column(String)
+
+    # Money (all in cents to avoid float drift)
+    subtotal_cents = Column(Integer, nullable=False)        # venue + services
+    platform_fee_cents = Column(Integer, nullable=False)    # 7% of subtotal
+    stripe_fee_cents = Column(Integer, nullable=False)      # passed to customer (gross-up)
+    total_charged_cents = Column(Integer, nullable=False)   # subtotal + stripe_fee_cents
+    refunded_cents = Column(Integer, default=0)
+
+    status = Column(Enum(PaymentStatus, native_enum=False), default=PaymentStatus.PENDING)
+    refund_reason = Column(String)
+    receipt_url = Column(String)
+    error_message = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    captured_at = Column(DateTime(timezone=True))
+    refunded_at = Column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Payouts — one per recipient per booking (host + each provider)
+# ---------------------------------------------------------------------------
+class Payout(Base):
+    __tablename__ = "payouts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=False)
+    recipient_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    recipient_type = Column(String, nullable=False)        # "host" | "provider"
+    booking_service_id = Column(Integer, ForeignKey("booking_services.id"))  # nullable for host
+    venue_id = Column(Integer, ForeignKey("venues.id"))                       # nullable for provider
+
+    gross_cents = Column(Integer, nullable=False)        # before platform fee
+    platform_fee_cents = Column(Integer, nullable=False) # 7%
+    net_cents = Column(Integer, nullable=False)          # gross - fee
+
+    stripe_transfer_id = Column(String, index=True)
+    status = Column(Enum(PayoutStatus, native_enum=False), default=PayoutStatus.PENDING)
+    error_message = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sent_at = Column(DateTime(timezone=True))
 
 
 # ---------------------------------------------------------------------------

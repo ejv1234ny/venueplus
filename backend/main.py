@@ -50,7 +50,7 @@ app.mount("/static", StaticFiles(directory=str(UPLOAD_DIR)), name="static")
 # Routers
 from routers import (auth, venues, services, bookings, users, events,
                      uploads, search, matching, messaging, reviews,
-                     notifications, admin, providers)
+                     notifications, admin, providers, payments)
 
 app.include_router(auth.router,          prefix="/api/auth",          tags=["Auth"])
 app.include_router(users.router,         prefix="/api/users",         tags=["Users"])
@@ -66,6 +66,7 @@ app.include_router(messaging.router,     prefix="/api/messages",      tags=["Mes
 app.include_router(reviews.router,       prefix="/api/reviews",       tags=["Reviews"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(admin.router,         prefix="/api/admin",         tags=["Admin"])
+app.include_router(payments.router,      prefix="/api/payments",      tags=["Payments"])
 
 
 @app.get("/")
