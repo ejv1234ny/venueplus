@@ -14,7 +14,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import StatusBadge from '@/components/StatusBadge';
 import EmptyState from '@/components/EmptyState';
 
-const statusFilters = ['all', 'pending', 'confirmed', 'completed', 'cancelled'];
+const statusFilters = ['all', 'awaiting_payment', 'pending', 'confirmed', 'completed', 'cancelled'];
 
 function BookingsContent() {
   const { user } = useAuthStore();
@@ -214,8 +214,23 @@ function BookingsContent() {
                           </div>
                         )}
 
+                        {/* Pay Now CTA — most prominent action when payment is owed */}
+                        {booking.status === 'awaiting_payment' && (
+                          <div className="pt-3">
+                            <Link
+                              href={`/checkout/${booking.id}`}
+                              className="block w-full text-center bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 rounded-lg shadow-sm"
+                            >
+                              Pay now — ${booking.total_cost.toFixed(2)}
+                            </Link>
+                            <p className="text-xs text-neutral-500 mt-2 text-center">
+                              Your booking will be sent to the host once payment is authorized.
+                            </p>
+                          </div>
+                        )}
+
                         {/* Cancel Button */}
-                        {booking.status === 'pending' && (
+                        {(booking.status === 'pending' || booking.status === 'awaiting_payment' || booking.status === 'confirmed') && (
                           <div className="pt-3">
                             <button
                               onClick={() => handleCancel(booking.id)}
