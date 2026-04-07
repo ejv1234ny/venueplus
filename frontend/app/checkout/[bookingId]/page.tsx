@@ -1,7 +1,54 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { loadStripe, Stripe } from '@stripe/stripe-js';
+import {
+  Elements, PaymentElement, useStripe, useElements,
+} from '@stripe/react-stripe-js';
 import { paymentsAPI } from '@/lib/api';
+
+const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+const stripePromise: Promise<Stripe | null> | null = PUBLISHABLE_KEY
+  ? loadStripe(PUBLISHABLE_KEY)
+  : null;
+
+function StripePaymentForm({ bookingId, total, onSuccess }:
+  { bookingId: number; total: number; onSuccess: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSubmitting(true); setError('');
+    const { error } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/bookings/${bookingId}?paid=1`,
+      },
+      redirect: 'if_required',
+    });
+    if (error) {
+      setError(error.message || 'Payment failed');
+      setSubmitting(false);
+    } else {
+      onSuccess();
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <PaymentElement />
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      <button type="submit" disabled={!stripe || submitting}
+        className="btn-primary w-full text-lg py-4">
+        {submitting ? 'Processing...' : `Pay $${total.toFixed(2)}`}
+      </button>
+    </form>
+  );
+}
 
 export default function CheckoutPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
@@ -39,6 +86,13 @@ export default function CheckoutPage() {
 
   if (!breakdown) return <div className="p-8">Loading checkout...</div>;
 
+  // The client_secret tells us if we're in real Stripe mode
+  const isRealStripe = PUBLISHABLE_KEY && pi?.client_secret &&
+                       !pi.client_secret.startsWith('pi_') === false &&
+                       pi.client_secret.includes('_secret_') &&
+                       pi.client_secret.startsWith('pi_') &&
+                       PUBLISHABLE_KEY.startsWith('pk_');
+
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Checkout</h1>
@@ -69,13 +123,19 @@ export default function CheckoutPage() {
       {!pi ? (
         <button onClick={startCheckout} disabled={loading}
           className="btn-primary w-full text-lg py-4">
-          {loading ? 'Creating payment...' : `Pay $${breakdown.total.toFixed(2)}`}
+          {loading ? 'Creating payment...' : `Continue to payment — $${breakdown.total.toFixed(2)}`}
         </button>
+      ) : stripePromise && pi.client_secret && pi.client_secret.startsWith('pi_') && PUBLISHABLE_KEY ? (
+        <Elements stripe={stripePromise}
+          options={{ clientSecret: pi.client_secret, appearance: { theme: 'stripe' } }}>
+          <StripePaymentForm bookingId={id} total={breakdown.total}
+            onSuccess={() => router.push(`/bookings/${id}?paid=1`)} />
+        </Elements>
       ) : (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <p className="mb-3"><strong>Sim mode:</strong> No real Stripe key configured.</p>
+          <p className="mb-3"><strong>Sim mode:</strong> No <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> configured.</p>
           <p className="text-sm mb-4">PaymentIntent <code>{pi.payment_intent_id}</code> created.
-            In production this would render the Stripe Elements card form here.</p>
+            Set the env var on Vercel to render the real Stripe Elements card form here.</p>
           <button onClick={simPay} disabled={loading} className="btn-primary w-full">
             {loading ? 'Simulating...' : 'Simulate successful payment'}
           </button>
