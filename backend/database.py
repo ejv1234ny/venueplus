@@ -13,6 +13,10 @@ DATABASE_URL = os.getenv(
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# Schema (used when on Postgres so we don't collide with other products in
+# a shared Supabase project). Defaults to venueplus.
+DB_SCHEMA = os.getenv("DB_SCHEMA", "venueplus")
+
 # Create engine
 connect_args = {}
 engine_kwargs = {}
@@ -20,6 +24,8 @@ if DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 else:
     engine_kwargs["pool_pre_ping"] = True
+    # Force every connection to look in our schema first
+    connect_args["options"] = f"-c search_path={DB_SCHEMA},public"
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args, **engine_kwargs)
 
