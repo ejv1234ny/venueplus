@@ -9,6 +9,7 @@ class UserRole(str, enum.Enum):
     RENTER = "renter"
     VENUE_OWNER = "venue_owner"
     SERVICE_PROVIDER = "service_provider"
+    CREATOR = "creator"
     ADMIN = "admin"
 
 # Service categories
@@ -416,7 +417,7 @@ class Payment(Base):
 
     # Money (all in cents to avoid float drift)
     subtotal_cents = Column(Integer, nullable=False)        # venue + services
-    platform_fee_cents = Column(Integer, nullable=False)    # 7% of subtotal
+    platform_fee_cents = Column(Integer, nullable=False)    # 12% of subtotal
     stripe_fee_cents = Column(Integer, nullable=False)      # passed to customer (gross-up)
     total_charged_cents = Column(Integer, nullable=False)   # subtotal + stripe_fee_cents
     refunded_cents = Column(Integer, default=0)
@@ -446,7 +447,7 @@ class Payout(Base):
     venue_id = Column(Integer, ForeignKey("venues.id"))                       # nullable for provider
 
     gross_cents = Column(Integer, nullable=False)        # before platform fee
-    platform_fee_cents = Column(Integer, nullable=False) # 7%
+    platform_fee_cents = Column(Integer, nullable=False) # 12%
     net_cents = Column(Integer, nullable=False)          # gross - fee
 
     stripe_transfer_id = Column(String, index=True)
