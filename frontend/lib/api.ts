@@ -225,3 +225,25 @@ export const adminAPI = {
   retryPayout: (payoutId: number) =>
     apiClient.post(`/api/admin/payouts/${payoutId}/retry`),
 };
+
+// Agent control plane (admin only)
+export const agentsAPI = {
+  runGoal: (goal: string, city?: string) =>
+    apiClient.post('/api/agents/goals', { goal, city: city || null }),
+  runs: () => apiClient.get('/api/agents/runs'),
+  run: (id: number) => apiClient.get(`/api/agents/runs/${id}`),
+  escalations: () => apiClient.get('/api/agents/escalations'),
+  approve: (id: number) => apiClient.post(`/api/agents/escalations/${id}/approve`),
+  reject: (id: number) => apiClient.post(`/api/agents/escalations/${id}/reject`),
+  kill: (enabled: boolean) => apiClient.post('/api/agents/kill', { enabled }),
+};
+
+// Admin Mission Control dashboard (admin only)
+export const dashboardAPI = {
+  metrics: () => apiClient.get('/api/admin/dashboard/metrics'),
+  agentsStatus: () => apiClient.get('/api/admin/dashboard/agents/status'),
+  escalations: (status: 'open' | 'all' = 'open') =>
+    apiClient.get('/api/admin/dashboard/escalations', { params: { status } }),
+  timeseries: (metric: 'bookings' | 'gmv' | 'new_venues' | 'new_providers', days = 30) =>
+    apiClient.get('/api/admin/dashboard/timeseries', { params: { metric, days } }),
+};
