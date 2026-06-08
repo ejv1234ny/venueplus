@@ -9,6 +9,10 @@ The plan is deterministic (no LLM, no randomness) and parameterised by the
 goal text + city, so the dashboard and tests get stable, meaningful traces.
 Auto-approved actions are marked executed immediately (the actual tool side
 effects are out of scope here); gated actions wait in the approval queue.
+
+A per-run :class:`guardrails.UsageTracker` accumulates autonomous outbound +
+spend so the guardrail can enforce the fleet's daily caps mid-run (relevant
+only when a risk tier is configured ``auto`` — see ``agents.types``).
 """
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
@@ -193,6 +197,7 @@ def run_goal(db: Session, goal: str, city: str | None = None,
         raise FleetDisabledError("Fleet is disabled (kill switch active)")
 
     config = config or AutonomyConfig()
+    usage = guardrails.UsageTracker()   # per-run cap accounting
     run = AgentRun(goal=goal, city=city, status=RunStatus.RUNNING)
     db.add(run)
     db.flush()  # assign run.id
@@ -204,7 +209,7 @@ def run_goal(db: Session, goal: str, city: str | None = None,
         db.flush()
 
         for pa in planned.actions:
-            decision = guardrails.evaluate(pa.risk, config)
+            decision = guardrails.evaluate(pa.risk, config, usage, pa.args)
             action = AgentAction(
                 job_id=job.id, tool=pa.tool, risk=pa.risk, decision=decision,
                 executed=(decision == Decision.AUTO), reason=pa.reason,
@@ -212,6 +217,8 @@ def run_goal(db: Session, goal: str, city: str | None = None,
             )
             db.add(action)
             db.flush()
+            if decision == Decision.AUTO:
+                usage.record(pa.risk, pa.args)   # count autonomous outreach/spend
             if decision == Decision.REQUIRE_APPROVAL:
                 db.add(AgentEscalation(
                     run_id=run.id, job_id=job.id, action_id=action.id,

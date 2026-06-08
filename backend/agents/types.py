@@ -45,13 +45,25 @@ class PlannedJob:
 
 
 class AutonomyConfig:
-    """Per-risk autonomy policy.
+    """Per-risk autonomy policy + daily caps.
 
     Maps each :class:`RiskLevel` to the :class:`Decision` the fleet may take
     without a human. ``money_movement`` and ``legal`` are HARD-GATED: they can
     never be configured to ``auto`` — an attempt to do so is silently clamped
     back to ``require_approval``. This mirrors the guardrail invariant and is
     the one rule callers cannot weaken.
+
+    Two daily caps bound autonomous activity *when* a risk tier is set to
+    ``auto`` (they do nothing while the tier requires approval): an outbound
+    message-count cap and a spend cap. The guardrail downgrades an otherwise
+    ``auto`` action to ``require_approval`` once a cap would be exceeded, so
+    even a fully-autonomous fleet cannot blast outreach or burn budget without
+    a human stepping in.
+
+    Default posture is conservative — only ``read`` and ``internal_write`` run
+    autonomously; outbound and financial require approval. Call
+    :meth:`mostly_autonomous` for the looser posture (outbound + financial run
+    within caps) once outreach templates and spend bands are trusted.
     """
 
     HARD_GATED = frozenset({RiskLevel.MONEY_MOVEMENT, RiskLevel.LEGAL})
@@ -65,7 +77,13 @@ class AutonomyConfig:
         RiskLevel.LEGAL: Decision.REQUIRE_APPROVAL,
     }
 
-    def __init__(self, policy: dict[RiskLevel, Decision] | None = None):
+    # Defaults for the daily caps (effective only where a tier is ``auto``).
+    DEFAULT_OUTBOUND_DAILY_CAP = 200          # messages / fleet / day
+    DEFAULT_SPEND_DAILY_CAP_CENTS = 50_000    # $500 / fleet / day
+
+    def __init__(self, policy: dict[RiskLevel, Decision] | None = None,
+                 outbound_daily_cap: int | None = None,
+                 spend_daily_cap_cents: int | None = None):
         merged = dict(self.DEFAULT_POLICY)
         if policy:
             merged.update(policy)
@@ -74,6 +92,20 @@ class AutonomyConfig:
             if merged.get(risk) == Decision.AUTO:
                 merged[risk] = Decision.REQUIRE_APPROVAL
         self.policy = merged
+        self.outbound_daily_cap = (self.DEFAULT_OUTBOUND_DAILY_CAP
+                                   if outbound_daily_cap is None else outbound_daily_cap)
+        self.spend_daily_cap_cents = (self.DEFAULT_SPEND_DAILY_CAP_CENTS
+                                      if spend_daily_cap_cents is None else spend_daily_cap_cents)
 
     def decision_for(self, risk: RiskLevel) -> Decision:
         return self.policy.get(risk, Decision.REQUIRE_APPROVAL)
+
+    @classmethod
+    def mostly_autonomous(cls, **caps) -> "AutonomyConfig":
+        """The looser posture: outbound + financial run autonomously *within
+        caps*; money_movement + legal remain hard-gated. Use once outreach and
+        spend are trusted. Caps still apply."""
+        return cls(policy={
+            RiskLevel.OUTBOUND: Decision.AUTO,
+            RiskLevel.FINANCIAL: Decision.AUTO,
+        }, **caps)
