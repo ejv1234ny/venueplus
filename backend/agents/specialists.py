@@ -8,8 +8,8 @@ Build order is deliberate -- one real agent at a time, supply before demand:
 
   1. **Venues** (this file, real) -- grows venue supply. Built first because a
      market has nothing to sell without venues.
-  2. **Providers** (deterministic stub) -- grows service-provider supply. Next
-     to be promoted to a real Claude loop.
+  2. **Providers** (real) -- grows service-provider supply into coverage gaps.
+     Promoted to a real Claude loop (this file).
   3. **Marketing** (deterministic stub) -- drives demand. Promoted last, once
      supply exists to point demand at.
 
@@ -82,18 +82,44 @@ class VenuesAgent(BaseAgent):
 
 
 # --------------------------------------------------------------------------- #
-# 2. Providers -- deterministic stub (next to be promoted)                    #
+# 2. Providers -- the second real, Claude-driven specialist                   #
 # --------------------------------------------------------------------------- #
 class ProvidersAgent(BaseAgent):
+    """Grows on-site service-provider supply (photographers, caterers, DJs,
+    bartenders, security, cleaning, decoration) in a market.
+
+    Real backend: a Claude loop grounded in (a) the providers we already have
+    and our coverage gaps by category and (b) public candidate businesses, so
+    it recruits into genuine gaps rather than piling onto covered categories.
+    Deterministic fallback: the canonical search -> invite -> outreach plan.
+    """
+
     name = "providers"
     role = "Service Provider Supply Agent"
-    tool_names = ("search_providers", "create_provider_invite",
-                  "send_provider_sms")
+    tool_names = (
+        "search_providers",          # read   -- public candidate businesses
+        "list_existing_providers",   # read   -- what we have + coverage gaps
+        "create_provider_invite",    # write  -- internal invite record
+        "send_provider_sms",         # outbound -- nudge to finish onboarding
+    )
     system_prompt = (
-        "You are the Service Provider Supply Agent for VenuePlus. You grow the "
-        "supply of bookable on-site service providers (photographers, caterers, "
-        "DJs, decorators, AV techs) in your market. (Deterministic stub for "
-        "now; pending promotion to a real Claude loop.)"
+        "You are the Service Provider Supply Agent for VenuePlus, a marketplace "
+        "for booking event venues and the on-site services an event needs. Your "
+        "single job is to grow the supply of high-quality, bookable service "
+        "providers in your assigned market.\n\n"
+        "Operating rules:\n"
+        "- Read before you write: check our existing providers and which "
+        "categories are under-covered before recruiting. Prioritise the "
+        "categories that are missing or thin (catering, photography, DJ, "
+        "bartending, security, cleaning, decoration).\n"
+        "- Recruit candidates that plausibly serve paid events; don't duplicate "
+        "providers we already have.\n"
+        "- Outreach is one specific, useful invitation per provider -- never "
+        "bulk spam. Each SMS needs the provider and category it targets.\n"
+        "- You propose; a human guardrail approves anything that contacts the "
+        "outside world. Prefer a few strong recruits in real gaps over many "
+        "weak ones.\n"
+        "- Keep every action's `reason` to one concrete line."
     )
 
     def fallback_plan(self, goal: str, city: str | None,
