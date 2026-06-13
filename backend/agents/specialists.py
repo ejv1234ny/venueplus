@@ -10,12 +10,12 @@ Build order is deliberate -- one real agent at a time, supply before demand:
      market has nothing to sell without venues.
   2. **Providers** (real) -- grows service-provider supply into coverage gaps.
      Promoted to a real Claude loop (this file).
-  3. **Marketing** (deterministic stub) -- drives demand. Promoted last, once
-     supply exists to point demand at.
+  3. **Marketing** (real) -- drives demand into markets that already have
+     supply. Promoted last (this file), so it can read supply before spending.
 
-The stubs implement the same ``fallback_plan`` contract as the real agent, so
-the orchestrator treats all three uniformly and each can be upgraded in place
-without touching the COO.
+All three specialists are real and share the same ``fallback_plan`` contract,
+so the orchestrator treats them uniformly -- each was upgraded in place without
+touching the COO.
 """
 from __future__ import annotations
 
@@ -138,18 +138,46 @@ class ProvidersAgent(BaseAgent):
 
 
 # --------------------------------------------------------------------------- #
-# 3. Marketing -- deterministic stub (promoted last)                          #
+# 3. Marketing -- the third real, Claude-driven specialist                    #
 # --------------------------------------------------------------------------- #
 class MarketingAgent(BaseAgent):
+    """Drives demand (public hosts and creators) into markets that already
+    have supply.
+
+    Real backend: a Claude loop that first reads the market's supply/demand
+    state (so it doesn't pour spend into a market with nothing to book), then
+    proposes SEO content, social posts and -- within budget -- paid campaigns.
+    Referral payouts (money movement) and partnership agreements (legal) are
+    always human-gated. Deterministic fallback: SEO + social, plus a paid
+    campaign / referral / partnership when the goal calls for them.
+    """
+
     name = "marketing"
     role = "Growth & Marketing Agent"
-    tool_names = ("generate_seo_content", "publish_social_post",
-                  "launch_paid_ad_campaign", "issue_referral_payout",
-                  "sign_partnership_agreement")
+    tool_names = (
+        "read_market_metrics",       # read     -- supply/demand before spending
+        "generate_seo_content",      # write    -- SEO landing copy
+        "publish_social_post",       # outbound -- announcement
+        "launch_paid_ad_campaign",   # financial-- paid acquisition (within budget)
+        "issue_referral_payout",     # money_movement -- HARD GATE
+        "sign_partnership_agreement",  # legal  -- HARD GATE
+    )
     system_prompt = (
-        "You are the Growth & Marketing Agent for VenuePlus. You drive demand "
-        "(public hosts and creators) into markets that already have supply. "
-        "(Deterministic stub for now; promoted last, after supply exists.)"
+        "You are the Growth & Marketing Agent for VenuePlus, a marketplace for "
+        "booking event venues and on-site services. Your job is to drive demand "
+        "(hosts and creators) into your assigned market.\n\n"
+        "Operating rules:\n"
+        "- Read before you spend: check the market's supply (venues, providers) "
+        "and current demand first. Do NOT drive paid demand into a market that "
+        "has little supply -- you'd burn budget on bookings that can't be "
+        "fulfilled. Lead with organic (SEO, social) when supply is still thin.\n"
+        "- Keep paid spend within the stated budget; the guardrail enforces a "
+        "daily cap and will send anything over it for approval.\n"
+        "- Referral payouts and partnership agreements always require a human -- "
+        "propose them with a clear rationale; never assume they will auto-run.\n"
+        "- You propose; a human guardrail approves anything that contacts the "
+        "outside world or spends money.\n"
+        "- Keep every action's `reason` to one concrete line."
     )
 
     def fallback_plan(self, goal: str, city: str | None,
@@ -181,6 +209,7 @@ class MarketingAgent(BaseAgent):
         return actions
 
 
+# --------------------------------------------------------------------------- #
 # Registry the COO dispatches through. Order encodes supply-before-demand.
 SPECIALISTS: dict[str, type[BaseAgent]] = {
     "venues": VenuesAgent,

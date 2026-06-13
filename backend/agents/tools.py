@@ -257,6 +257,78 @@ def send_provider_sms(args: dict, ctx: "ToolContext") -> dict:
             "go-live; running dry_run only"}
 
 
+# ---- marketing reads + writes --------------------------------------------- #
+def read_market_metrics(args: dict, ctx: "ToolContext") -> dict:
+    """Read a market's supply/demand so Marketing doesn't pour spend into a
+    market with nothing to book. Live: counts active venues, providers serving
+    the city, and recent bookings from our DB. Sim/no-DB: zeros."""
+    city = args.get("city")
+    if ctx.db is None:
+        return {"ok": True, "live": False, "city": city, "venues": 0,
+                "providers": 0, "recent_bookings": 0, "has_supply": False}
+    try:
+        from models import Venue, ServiceProvider, Booking
+        vq = ctx.db.query(Venue).filter(Venue.is_active.is_(True))
+        if city:
+            vq = vq.filter(Venue.city.ilike(f"%{city}%"))
+        venues = vq.count()
+        providers = 0
+        for p in (ctx.db.query(ServiceProvider)
+                  .filter(ServiceProvider.is_active.is_(True)).limit(1000).all()):
+            areas = p.service_area_cities or []
+            if not city or any(str(city).lower() in str(a).lower() for a in areas):
+                providers += 1
+        bookings = 0
+        if city:
+            bookings = (ctx.db.query(Booking).join(Venue, Booking.venue_id == Venue.id)
+                        .filter(Venue.city.ilike(f"%{city}%")).count())
+        else:
+            bookings = ctx.db.query(Booking).count()
+        return {"ok": True, "live": True, "city": city, "venues": venues,
+                "providers": providers, "recent_bookings": bookings,
+                "has_supply": venues > 0 and providers > 0}
+    except Exception as e:
+        return {"ok": False, "city": city, "venues": 0, "providers": 0,
+                "recent_bookings": 0, "has_supply": False,
+                "error": f"{type(e).__name__}: {e}"}
+
+
+def generate_seo_content(args: dict, ctx: "ToolContext") -> dict:
+    if ctx.dry_run:
+        return _dry("generate_seo_content", args,
+                    "draft SEO landing copy for the market (internal)")
+    return {"ok": False, "not_implemented": "live SEO publish disabled until "
+            "go-live; running dry_run only"}
+
+
+def publish_social_post(args: dict, ctx: "ToolContext") -> dict:
+    if ctx.dry_run:
+        return _dry("publish_social_post", args,
+                    "publish a launch announcement to social")
+    return {"ok": False, "not_implemented": "live social publish disabled "
+            "until go-live; running dry_run only"}
+
+
+def launch_paid_ad_campaign(args: dict, ctx: "ToolContext") -> dict:
+    if ctx.dry_run:
+        return _dry("launch_paid_ad_campaign", args,
+                    "start a paid acquisition campaign within budget")
+    return {"ok": False, "not_implemented": "live ad spend disabled until "
+            "go-live; running dry_run only"}
+
+
+def issue_referral_payout(args: dict, ctx: "ToolContext") -> dict:
+    # Hard-gated: only reaches here after explicit human approval. Still dry-run.
+    return _dry("issue_referral_payout", args,
+                "pay a referral incentive (hard-gated; human-approved)")
+
+
+def sign_partnership_agreement(args: dict, ctx: "ToolContext") -> dict:
+    # Hard-gated: only reaches here after explicit human approval. Still dry-run.
+    return _dry("sign_partnership_agreement", args,
+                "sign a co-marketing partnership (hard-gated; human-approved)")
+
+
 @dataclass
 class Tool:
     name: str
@@ -268,9 +340,9 @@ class Tool:
         return self.handler(args or {}, ctx or ToolContext())
 
 
-# The tools the COO plan emits, each pinned to a risk tier. Venue + provider
-# tools have real/dry-run handlers; marketing tools remain safe no-ops pending
-# that agent's promotion.
+# The tools the COO plan emits, each pinned to a risk tier. All three agents
+# (venues, providers, marketing) have real/dry-run handlers; money_movement +
+# legal handlers stay dry-run even post-approval and are guardrail hard-gated.
 REGISTRY: dict[str, Tool] = {t.name: t for t in [
     # venues (real agent)
     Tool("search_osm_venues", RiskLevel.READ,
@@ -290,12 +362,19 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "Create an invite record for a provider", create_provider_invite),
     Tool("send_provider_sms", RiskLevel.OUTBOUND,
          "Text a provider to finish onboarding", send_provider_sms),
-    # marketing (stub agent)
-    Tool("generate_seo_content", RiskLevel.INTERNAL_WRITE, "Draft SEO landing copy"),
-    Tool("publish_social_post", RiskLevel.OUTBOUND, "Publish an announcement to social"),
-    Tool("launch_paid_ad_campaign", RiskLevel.FINANCIAL, "Start a paid acquisition campaign"),
-    Tool("issue_referral_payout", RiskLevel.MONEY_MOVEMENT, "Pay a referral incentive (hard-gated)"),
-    Tool("sign_partnership_agreement", RiskLevel.LEGAL, "Sign a partnership agreement (hard-gated)"),
+    # marketing (real agent)
+    Tool("read_market_metrics", RiskLevel.READ,
+         "Read a market's supply/demand before spending", read_market_metrics),
+    Tool("generate_seo_content", RiskLevel.INTERNAL_WRITE,
+         "Draft SEO landing copy", generate_seo_content),
+    Tool("publish_social_post", RiskLevel.OUTBOUND,
+         "Publish an announcement to social", publish_social_post),
+    Tool("launch_paid_ad_campaign", RiskLevel.FINANCIAL,
+         "Start a paid acquisition campaign", launch_paid_ad_campaign),
+    Tool("issue_referral_payout", RiskLevel.MONEY_MOVEMENT,
+         "Pay a referral incentive (hard-gated)", issue_referral_payout),
+    Tool("sign_partnership_agreement", RiskLevel.LEGAL,
+         "Sign a partnership agreement (hard-gated)", sign_partnership_agreement),
 ]}
 
 
