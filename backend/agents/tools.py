@@ -242,11 +242,27 @@ def send_venue_outreach_email(args: dict, ctx: "ToolContext") -> dict:
 
 
 def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
+    """Persist a recruited provider as a provisional lead (inactive until the
+    business onboards). Dry-run logs the intent; live writes via the shared
+    ``services.provider_leads`` module -- the same path the CLI ingest uses, so
+    the agent and the bulk script populate leads identically.
+
+    The candidate may be passed as ``args["candidate"]`` ({name, tags, ...}) or
+    inline on ``args`` (expects at least ``name`` + OSM-style tags)."""
     if ctx.dry_run:
         return _dry("create_provider_invite", args,
-                    "create an internal invite record for a high-fit provider")
-    return {"ok": False, "not_implemented": "live invite write disabled until "
-            "go-live; running dry_run only"}
+                    "create a provisional provider lead (inactive until onboarded)")
+    try:
+        from services.provider_leads import create_lead
+        candidate = args.get("candidate") or args
+        prov = create_lead(ctx.db, args.get("city"), candidate)
+        if prov is None:
+            return {"ok": False, "skipped": "unclassifiable or already a lead",
+                    "args": args}
+        return {"ok": True, "lead_provider_id": prov.id,
+                "category": prov.service_category.value, "active": prov.is_active}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def send_provider_sms(args: dict, ctx: "ToolContext") -> dict:
@@ -359,7 +375,7 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
     Tool("list_existing_providers", RiskLevel.READ,
          "List providers we already have + coverage gaps by category", list_existing_providers),
     Tool("create_provider_invite", RiskLevel.INTERNAL_WRITE,
-         "Create an invite record for a provider", create_provider_invite),
+         "Create a provisional provider lead from a candidate", create_provider_invite),
     Tool("send_provider_sms", RiskLevel.OUTBOUND,
          "Text a provider to finish onboarding", send_provider_sms),
     # marketing (real agent)
