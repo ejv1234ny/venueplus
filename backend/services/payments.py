@@ -7,14 +7,22 @@ Two backends:
 Money is always in **cents** (int) to avoid float drift.
 
 Pricing model:
-  - Platform fee: 7% of subtotal, taken from host/provider gross
+  - Platform fee: 12% of subtotal, taken from host/provider gross
   - Stripe fee: passed to customer as a separate line item, computed via gross-up
+
+FREE MODE (config.is_free_mode):
+  - compute_breakdown / split_payouts return zeros (the service is free), and
+  - create_payment_intent is a no-op that never calls Stripe,
+  so no money ever moves. The Stripe Connect code below is otherwise intact and
+  switches back on the moment FREE_MODE is turned off.
 """
 import math
 import os
 import secrets
 import time
 from typing import Optional
+
+from config import is_free_mode
 
 PLATFORM_FEE_PCT = 0.12
 STRIPE_FEE_PCT = 0.029   # 2.9%
@@ -44,7 +52,19 @@ def gross_up_for_stripe(subtotal_cents: int) -> int:
 
 
 def compute_breakdown(subtotal_cents: int) -> dict:
-    """Returns the full breakdown shown to the customer at checkout."""
+    """Returns the full breakdown shown to the customer at checkout.
+
+    In FREE MODE every charge is zero — the service is free and no money moves.
+    """
+    if is_free_mode():
+        return {
+            "subtotal_cents": subtotal_cents,
+            "platform_fee_cents": 0,
+            "stripe_fee_cents": 0,
+            "total_charged_cents": 0,
+            "platform_fee_pct": 0.0,
+            "free_mode": True,
+        }
     stripe_fee = gross_up_for_stripe(subtotal_cents)
     platform_fee = int(round(subtotal_cents * PLATFORM_FEE_PCT))
     return {
@@ -58,7 +78,9 @@ def compute_breakdown(subtotal_cents: int) -> dict:
 
 def split_payouts(subtotal_cents: int, line_items: list[dict]) -> list[dict]:
     """Given the lines (host + each provider) compute net payouts after
-    deducting the 7% platform fee from each line proportionally.
+    deducting the 12% platform fee from each line proportionally.
+
+    In FREE MODE nothing is owed (no money moves) — every net is zero.
 
     line_items: [{"recipient_user_id": int, "recipient_type": "host"|"provider",
                   "gross_cents": int, "booking_service_id": int|None,
@@ -66,6 +88,9 @@ def split_payouts(subtotal_cents: int, line_items: list[dict]) -> list[dict]:
     """
     out = []
     for li in line_items:
+        if is_free_mode():
+            out.append({**li, "platform_fee_cents": 0, "net_cents": 0})
+            continue
         gross = li["gross_cents"]
         fee = int(round(gross * PLATFORM_FEE_PCT))
         out.append({**li, "platform_fee_cents": fee, "net_cents": gross - fee})
@@ -183,10 +208,16 @@ def create_payment_intent(amount_cents: int, customer_email: str,
                           idempotency_key: Optional[str] = None) -> dict:
     """Authorize-only (manual capture) intent.
 
+    In FREE MODE this never touches Stripe — it returns a sentinel so callers
+    don't create a real (or $0) charge. No money moves.
+
     If customer_id is provided, attaches the PI to that Stripe Customer so
     the renter can save payment methods. idempotency_key prevents duplicate
     PaymentIntents when the client retries.
     """
+    if is_free_mode():
+        return {"id": f"free_{secrets.token_hex(8)}", "client_secret": None,
+                "status": "free_mode"}
     if _has_real_stripe():
         s = _stripe()
         kwargs = dict(
