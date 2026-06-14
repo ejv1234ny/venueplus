@@ -2,28 +2,28 @@
 
 Turns a free-text *goal* into a plan of Jobs across the worker agents, runs
 each planned Action through the guardrail, executes the auto-approved ones
-through their tool handler (dry-run for write/outbound today), and persists the
-whole trace (:class:`AgentRun` -> :class:`AgentJob` -> :class:`AgentAction`)
-plus an :class:`AgentEscalation` for every action the guardrail gates to a
-human.
+through their tool handler (dry-run for write/outbound unless AGENTS_LIVE), and
+persists the whole trace (:class:`AgentRun` -> :class:`AgentJob` ->
+:class:`AgentAction`) plus an :class:`AgentEscalation` for every action the
+guardrail gates to a human.
 
 How the COO coordinates the fleet
 ---------------------------------
 The COO dispatches one job per worker agent, in **supply-before-demand** order
-(`venues` -> `providers` -> `marketing`): a market needs venues and providers
-before demand is worth driving into it. Each agent plans its own actions:
+(`venues` -> `providers` -> `marketing`). Each agent plans its own actions
+(real Claude loop when ``ANTHROPIC_API_KEY`` is set; deterministic fallback
+otherwise).
 
-* **Venues** is a real, Claude-driven agent (:class:`agents.specialists.
-  VenuesAgent`). With ``ANTHROPIC_API_KEY`` set it runs a tool-calling loop;
-  without one it falls back to a deterministic plan, so dev/CI/tests are
-  reproducible and offline.
-* **Providers** and **Marketing** are deterministic stubs today, next in line
-  to be promoted to real agents -- one at a time, without touching the COO.
-
-A per-run :class:`guardrails.UsageTracker` accumulates autonomous outbound +
-spend so the guardrail can enforce the fleet's daily caps mid-run.
+Execution mode
+--------------
+``AGENTS_LIVE`` (env) controls whether tool side effects are real. Default OFF:
+agents plan + log what they *would* do (dry-run). Set ``AGENTS_LIVE=true`` to
+let auto-approved write/outbound tools actually run. Money is independently
+gated by guardrails (money_movement + legal always need a human) and by
+FREE_MODE.
 """
 import logging
+import os
 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
@@ -41,6 +41,13 @@ logger = logging.getLogger("agents.orchestrator")
 
 # The COO's dispatch order: supply first, demand last.
 FLEET_ORDER = ("venues", "providers", "marketing")
+
+
+def _agents_live() -> bool:
+    """When AGENTS_LIVE is truthy, auto-approved tools perform real side effects.
+    Default off — agents plan + log but don't send/spend. Read live from env so
+    go-live is a flag flip, not a redeploy."""
+    return os.getenv("AGENTS_LIVE", "false").strip().lower() in ("1", "true", "yes", "on")
 
 
 # --------------------------------------------------------------------------- #
@@ -175,9 +182,9 @@ def run_goal(db: Session, goal: str, city: str | None = None,
 
     config = config or AutonomyConfig()
     llm = LLMProvider()
-    # Reads hit live sources only when a real model drives the run; writes /
-    # outbound stay dry-run during the pilot-prep phase.
-    ctx = ToolContext(db=db, live=llm.is_real, dry_run=True)
+    # Reads hit live sources when a real model drives the run; writes / outbound
+    # perform real side effects only when AGENTS_LIVE is set (else dry-run).
+    ctx = ToolContext(db=db, live=llm.is_real, dry_run=not _agents_live())
     usage = guardrails.UsageTracker()   # per-run cap accounting
 
     run = AgentRun(goal=goal, city=city, status=RunStatus.RUNNING)
@@ -228,8 +235,8 @@ def resolve_escalation(db: Session, escalation: AgentEscalation, *,
     """Approve or reject an escalation, then recompute its run.
 
     Approving executes the gated action through its tool handler (dry-run for
-    write/outbound today) and marks it executed; rejecting leaves it
-    un-executed and blocks its job. Approval is the human gate -- there is no
+    write/outbound unless AGENTS_LIVE) and marks it executed; rejecting leaves
+    it un-executed and blocks its job. Approval is the human gate -- there is no
     auto path here.
     """
     escalation.status = (EscalationStatus.APPROVED if approve
@@ -240,7 +247,7 @@ def resolve_escalation(db: Session, escalation: AgentEscalation, *,
         action = db.query(AgentAction).filter(
             AgentAction.id == escalation.action_id).first()
         if action:
-            ctx = ToolContext(db=db, live=False, dry_run=True)
+            ctx = ToolContext(db=db, live=False, dry_run=not _agents_live())
             result = tools.execute(action.tool, action.args or {}, ctx)
             logger.info("approved+executed %s -> %s", action.tool, result)
             action.executed = True
