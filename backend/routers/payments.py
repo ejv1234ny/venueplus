@@ -11,6 +11,11 @@ Endpoints:
   POST /webhook                      -> Stripe webhook handler
   GET  /my/payouts                   -> dashboard for current user
   GET  /breakdown/{booking_id}       -> view price breakdown without creating PI
+
+FREE MODE (config.is_free_mode): /checkout short-circuits — no PaymentIntent,
+no Payment/Payout rows; the booking moves straight to host approval. The rest
+of the Stripe Connect plumbing stays intact and reactivates when FREE_MODE is
+turned off.
 """
 import os
 from datetime import datetime, timezone
@@ -20,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from auth import get_current_active_user, require_admin
+from config import is_free_mode
 from database import get_db
 from models import (User, UserRole, Venue, Booking, BookingStatus,
                     BookingService, ServiceProvider, StripeAccount,
@@ -162,6 +168,9 @@ def get_breakdown(booking_id: int,
     if booking.renter_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(403, "Not yours")
     breakdown, lines = _compute_booking_payouts(db, booking)
+    note = ("VenuePlus is free during beta — no charges." if breakdown.get("free_mode")
+            else "Platform fee is deducted from host/provider payouts. "
+                 "Stripe processing fee is added to your total.")
     return {
         "lines": [{"label": l["label"],
                    "gross": p.dollars(l["gross_cents"]),
@@ -171,7 +180,8 @@ def get_breakdown(booking_id: int,
         "platform_fee_pct": breakdown["platform_fee_pct"],
         "stripe_processing_fee": p.dollars(breakdown["stripe_fee_cents"]),
         "total": p.dollars(breakdown["total_charged_cents"]),
-        "note": "Platform fee is deducted from host/provider payouts. Stripe processing fee is added to your total.",
+        "free_mode": breakdown.get("free_mode", False),
+        "note": note,
     }
 
 
@@ -184,6 +194,27 @@ def checkout(booking_id: int,
         raise HTTPException(404, "Booking not found")
     if booking.renter_id != current_user.id:
         raise HTTPException(403, "Not your booking")
+
+    # FREE MODE: no payment. Move the booking to host approval and return.
+    if is_free_mode():
+        if booking.status == BookingStatus.AWAITING_PAYMENT:
+            booking.status = BookingStatus.PENDING
+            db.add(Notification(
+                user_id=db.query(Venue).filter(Venue.id == booking.venue_id).first().owner_id,
+                type=NotificationType.BOOKING_CREATED,
+                title="Booking request — please confirm",
+                body=f"Free booking #{booking.id} awaiting your approval",
+                link=f"/host/bookings/{booking.id}",
+            ))
+            db.commit()
+        return {
+            "free_mode": True,
+            "total_charged": 0,
+            "status": booking.status.value,
+            "message": "VenuePlus is free during beta — no payment required. "
+                       "Your request is awaiting host confirmation.",
+        }
+
     if booking.status != BookingStatus.AWAITING_PAYMENT:
         raise HTTPException(400, f"Booking is {booking.status.value}, not awaiting payment")
 
