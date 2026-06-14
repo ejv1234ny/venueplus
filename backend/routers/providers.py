@@ -3,6 +3,7 @@
 Onboarding is a multi-step process that lives over multiple requests; the
 client passes the step number and we update or create the right rows.
 """
+import os
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
@@ -18,6 +19,10 @@ from models import (User, UserRole, ServiceProvider, ServiceCategory,
 from services import email as email_svc
 
 router = APIRouter()
+
+# Public site URL used in outbound links (claim emails, etc.). Configure in prod
+# (e.g. https://venueplus.vercel.app); falls back to localhost for dev.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
 def _now():
@@ -159,7 +164,7 @@ def list_blackouts(provider_id: int, db: Session = Depends(get_db)):
              "reason": b.reason} for b in rows]
 
 
-# ---------------- CLAIM-LISTING FLOW (for scraped records) ----------------
+# ---------------- CLAIM-LISTING FLOW (for scraped/ingested records) ----------------
 class ClaimRequest(BaseModel):
     provider_id: int
     real_email: EmailStr
@@ -173,12 +178,19 @@ def claim_request(payload: ClaimRequest, db: Session = Depends(get_db)):
     """Step 1: a person says 'I own this listing.' We email them a token.
     The token, when consumed, transfers the listing to a freshly created (or
     existing) account that they then set a password on.
+
+    Works for provisional leads ingested from public sources (inactive
+    ServiceProviders on placeholder @venueplus.lead / @providers.venueplus.local
+    accounts that are not yet verified).
     """
     sp = db.query(ServiceProvider).filter(ServiceProvider.id == payload.provider_id).first()
     if not sp:
         raise HTTPException(404, "Listing not found")
     owner = db.query(User).filter(User.id == sp.user_id).first()
-    if owner and owner.is_verified and not owner.email.endswith("@providers.venueplus.local"):
+    placeholder_domains = ("@providers.venueplus.local", "@venueplus.lead",
+                           "@venueplus.seed")
+    is_placeholder = owner and any(owner.email.endswith(d) for d in placeholder_domains)
+    if owner and owner.is_verified and not is_placeholder:
         raise HTTPException(400, "Listing already claimed")
 
     # Create or fetch the claimer user
@@ -205,7 +217,7 @@ def claim_request(payload: ClaimRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # Email the claimer
-    link = f"http://localhost:3000/claim?token={tok}"
+    link = f"{FRONTEND_URL}/claim?token={tok}"
     subject = f"Claim your VenuePlus listing: {sp.service_name}"
     html = f"""
     <p>Hi {payload.first_name},</p>
@@ -243,7 +255,7 @@ def claim_confirm(payload: ClaimConfirm, db: Session = Depends(get_db)):
     user.hashed_password = get_password_hash(payload.new_password)
     user.is_verified = True
 
-    # Transfer the SP to this user
+    # Transfer the SP to this user and make it live + bookable
     sp.user_id = user.id
     sp.is_active = True
     tok.used_at = _now()
