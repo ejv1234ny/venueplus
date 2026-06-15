@@ -1,26 +1,13 @@
-"""Tool registry -- the canonical map of every tool an agent can call to its
+"""Tool registry — the canonical map of every tool an agent can call to its
 RiskLevel and its handler.
 
-This is the single place that:
-  * pins each tool's risk tier (risk is defined once here, not re-typed in
-    planners), and
-  * holds the handler that performs the side effect when the orchestrator
-    executes an auto-approved (or human-approved) action.
-
 Execution mode is governed by :class:`ToolContext`:
-
-  * ``live`` -- when True (a real model is driving, i.e. ``ANTHROPIC_API_KEY``
-    is set), READ tools hit real sources (our DB, public data). When False
-    (dev / CI / sim), reads return small simulated samples so tests stay fast,
-    offline and deterministic.
-  * ``dry_run`` -- when True (the current pilot-prep posture), WRITE / OUTBOUND
-    / FINANCIAL tools DO NOT perform their real side effect; they return a
-    structured ``{"dry_run": True, ...}`` record describing what they *would*
-    do. MONEY_MOVEMENT / LEGAL are hard-gated by the guardrail and never reach
-    a handler without explicit human approval.
-
-`risk_for(tool)` lets callers (and tests) confirm a planner and the registry
-agree on every tool's risk.
+  * ``live`` — READ tools hit real sources (our DB, public data) when a real
+    model drives the run; otherwise simulated samples (fast/offline).
+  * ``dry_run`` — when True, WRITE / OUTBOUND / FINANCIAL tools only log what
+    they *would* do. When False (AGENTS_LIVE), they perform real side effects
+    through the app's services (DB drafts, email, SMS). MONEY_MOVEMENT / LEGAL
+    are hard-gated by the guardrail and only run after explicit human approval.
 """
 from __future__ import annotations
 
@@ -30,14 +17,8 @@ from typing import Any, Callable
 from agents.types import RiskLevel
 
 
-# --------------------------------------------------------------------------- #
-# Execution context                                                           #
-# --------------------------------------------------------------------------- #
 @dataclass
 class ToolContext:
-    """Carries the DB session and the two execution-mode switches into a
-    handler. ``db`` may be None in pure-unit tests; handlers degrade to a
-    simulated result when it is."""
     db: Any = None
     live: bool = False      # reads hit real sources when True
     dry_run: bool = True    # writes/outbound are simulated when True
@@ -47,9 +28,7 @@ class ToolContext:
 # Handlers                                                                     #
 # --------------------------------------------------------------------------- #
 def _dry(tool: str, args: dict, would: str) -> dict:
-    """Standard 'logged, not performed' record for a dry-run side effect."""
-    return {"ok": True, "dry_run": True, "tool": tool, "would": would,
-            "args": args}
+    return {"ok": True, "dry_run": True, "tool": tool, "would": would, "args": args}
 
 
 def _noop(args: dict, ctx: "ToolContext") -> dict:
@@ -57,10 +36,7 @@ def _noop(args: dict, ctx: "ToolContext") -> dict:
 
 
 def _overpass(query: str) -> list[dict]:
-    """Run an Overpass query, return named elements (raises on failure)."""
-    import json
-    import urllib.parse
-    import urllib.request
+    import json, urllib.parse, urllib.request
     data = urllib.parse.urlencode({"data": query}).encode()
     req = urllib.request.Request(
         "https://overpass-api.de/api/interpreter", data=data,
@@ -84,7 +60,7 @@ def _overpass(query: str) -> list[dict]:
     return out
 
 
-# ---- venue reads (real when live, simulated otherwise) -------------------- #
+# ---- venue reads ---------------------------------------------------------- #
 _SIM_OSM_VENUES = [
     {"name": "The Loft on 5th", "type": "event_space", "source": "osm:sim"},
     {"name": "Riverside Community Hall", "type": "community_centre", "source": "osm:sim"},
@@ -93,15 +69,9 @@ _SIM_OSM_VENUES = [
 
 
 def search_osm_venues(args: dict, ctx: "ToolContext") -> dict:
-    """Scout candidate venues from public data (OpenStreetMap).
-
-    Live: queries the Overpass API for event-suitable features in the city.
-    Sim: returns a small fixed sample (no network), so tests are deterministic.
-    """
     city = args.get("city")
     if not ctx.live:
-        return {"ok": True, "live": False, "city": city,
-                "candidates": _SIM_OSM_VENUES}
+        return {"ok": True, "live": False, "city": city, "candidates": _SIM_OSM_VENUES}
     try:
         q = f'''
         [out:json][timeout:25];
@@ -115,16 +85,13 @@ def search_osm_venues(args: dict, ctx: "ToolContext") -> dict:
         );
         out center 60;
         '''
-        return {"ok": True, "live": True, "city": city,
-                "candidates": _overpass(q)}
-    except Exception as e:  # network/parse failure -> safe, empty result
+        return {"ok": True, "live": True, "city": city, "candidates": _overpass(q)}
+    except Exception as e:
         return {"ok": False, "live": True, "city": city, "candidates": [],
                 "error": f"{type(e).__name__}: {e}"}
 
 
 def list_existing_venues(args: dict, ctx: "ToolContext") -> dict:
-    """What we already list in the market -- so the agent doesn't re-draft a
-    venue we already carry. Live: queries our DB. Sim/no-DB: empty."""
     city = args.get("city")
     if ctx.db is None:
         return {"ok": True, "live": False, "city": city, "venues": []}
@@ -139,33 +106,23 @@ def list_existing_venues(args: dict, ctx: "ToolContext") -> dict:
                             "venue_type": v.venue_type, "city": v.city}
                            for v in rows]}
     except Exception as e:
-        return {"ok": False, "city": city, "venues": [],
-                "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "city": city, "venues": [], "error": f"{type(e).__name__}: {e}"}
 
 
-# ---- provider reads (real when live, simulated otherwise) ----------------- #
+# ---- provider reads ------------------------------------------------------- #
 _SIM_PROVIDER_CANDIDATES = [
     {"name": "Northside Catering Co.", "tags": {"shop": "caterer"}, "source": "osm:sim"},
     {"name": "Apex Event Photography", "tags": {"craft": "photographer"}, "source": "osm:sim"},
     {"name": "BrightStage AV & Lighting", "tags": {"shop": "trade"}, "source": "osm:sim"},
 ]
-
-# Service categories we actively want covered in every market (mirror of the
-# ServiceCategory enum's high-demand subset).
 _TARGET_CATEGORIES = ("catering", "photography", "dj", "bartending",
                       "security", "cleaning", "decoration")
 
 
 def search_providers(args: dict, ctx: "ToolContext") -> dict:
-    """Find candidate service providers serving a market from public data.
-
-    Live: Overpass query for service businesses (caterers, photographers,
-    party/event shops). Sim: fixed sample (no network).
-    """
     city = args.get("city")
     if not ctx.live:
-        return {"ok": True, "live": False, "city": city,
-                "candidates": _SIM_PROVIDER_CANDIDATES}
+        return {"ok": True, "live": False, "city": city, "candidates": _SIM_PROVIDER_CANDIDATES}
     try:
         q = f'''
         [out:json][timeout:25];
@@ -178,17 +135,13 @@ def search_providers(args: dict, ctx: "ToolContext") -> dict:
         );
         out center 60;
         '''
-        return {"ok": True, "live": True, "city": city,
-                "candidates": _overpass(q)}
+        return {"ok": True, "live": True, "city": city, "candidates": _overpass(q)}
     except Exception as e:
         return {"ok": False, "live": True, "city": city, "candidates": [],
                 "error": f"{type(e).__name__}: {e}"}
 
 
 def list_existing_providers(args: dict, ctx: "ToolContext") -> dict:
-    """Service providers we already have serving the market, with a coverage
-    breakdown by category and the missing target categories -- so the agent
-    recruits into genuine gaps. Live: queries our DB. Sim/no-DB: empty."""
     city = args.get("city")
     category = args.get("category")
     if ctx.db is None:
@@ -215,40 +168,56 @@ def list_existing_providers(args: dict, ctx: "ToolContext") -> dict:
             providers.append({"id": p.id, "service_name": p.service_name,
                               "category": cat, "rating": p.rating})
         missing = [c for c in _TARGET_CATEGORIES if coverage.get(c, 0) == 0]
-        return {"ok": True, "live": True, "city": city,
-                "count": len(providers), "providers": providers,
-                "coverage": coverage, "missing_categories": missing}
+        return {"ok": True, "live": True, "city": city, "count": len(providers),
+                "providers": providers, "coverage": coverage, "missing_categories": missing}
     except Exception as e:
         return {"ok": False, "city": city, "providers": [], "coverage": {},
                 "missing_categories": list(_TARGET_CATEGORIES),
                 "error": f"{type(e).__name__}: {e}"}
 
 
-# ---- writes / outbound (dry-run today) ------------------------------------ #
+# ---- venue writes / outbound ---------------------------------------------- #
 def draft_venue_listing(args: dict, ctx: "ToolContext") -> dict:
+    """Create an inactive draft Venue from a candidate (live) or log (dry-run)."""
     if ctx.dry_run:
         return _dry("draft_venue_listing", args,
                     "create an internal draft Venue listing for owner review")
-    return {"ok": False, "not_implemented": "live draft write disabled until "
-            "go-live; running dry_run only"}
+    try:
+        from services.venue_leads import create_venue_lead
+        candidate = args.get("candidate") or args
+        v = create_venue_lead(ctx.db, args.get("city"), candidate)
+        if v is None:
+            return {"ok": False, "skipped": "no candidate name or already drafted",
+                    "args": args}
+        return {"ok": True, "draft_venue_id": v.id, "active": v.is_active}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def send_venue_outreach_email(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
         return _dry("send_venue_outreach_email", args,
                     "email a venue owner inviting them to list")
-    return {"ok": False, "not_implemented": "live outbound email disabled "
-            "until go-live; running dry_run only"}
+    to = args.get("email") or args.get("to")
+    if not to:
+        return {"ok": False, "skipped": "no owner email on candidate; can't send outreach"}
+    try:
+        from services import email as email_svc
+        name = args.get("name") or "there"
+        subject = "List your space on VenuePlus (free during beta)"
+        html = (f"<p>Hi {name},</p><p>VenuePlus is a marketplace for event venues "
+                "and on-site services. Listing is free during our beta and takes a "
+                "few minutes.</p><p>Reply and we'll help you get set up.</p>")
+        res = email_svc.send(to, subject, html)
+        return {"ok": bool(res.get("ok")), "sent_to": to, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+# ---- provider writes / outbound ------------------------------------------- #
 def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
     """Persist a recruited provider as a provisional lead (inactive until the
-    business onboards). Dry-run logs the intent; live writes via the shared
-    ``services.provider_leads`` module -- the same path the CLI ingest uses, so
-    the agent and the bulk script populate leads identically.
-
-    The candidate may be passed as ``args["candidate"]`` ({name, tags, ...}) or
-    inline on ``args`` (expects at least ``name`` + OSM-style tags)."""
+    business onboards). Dry-run logs; live writes via services.provider_leads."""
     if ctx.dry_run:
         return _dry("create_provider_invite", args,
                     "create a provisional provider lead (inactive until onboarded)")
@@ -257,8 +226,7 @@ def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
         candidate = args.get("candidate") or args
         prov = create_lead(ctx.db, args.get("city"), candidate)
         if prov is None:
-            return {"ok": False, "skipped": "unclassifiable or already a lead",
-                    "args": args}
+            return {"ok": False, "skipped": "unclassifiable or already a lead", "args": args}
         return {"ok": True, "lead_provider_id": prov.id,
                 "category": prov.service_category.value, "active": prov.is_active}
     except Exception as e:
@@ -267,17 +235,22 @@ def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
 
 def send_provider_sms(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
-        return _dry("send_provider_sms", args,
-                    "text a provider to finish onboarding")
-    return {"ok": False, "not_implemented": "live outbound SMS disabled until "
-            "go-live; running dry_run only"}
+        return _dry("send_provider_sms", args, "text a provider to finish onboarding")
+    to = args.get("phone") or args.get("to")
+    if not to:
+        return {"ok": False, "skipped": "no phone on candidate; can't text"}
+    try:
+        from services import sms
+        body = args.get("message") or ("VenuePlus: finish your free listing so event "
+               "hosts can book you. Reply STOP to opt out.")
+        res = sms.send(to, body)
+        return {"ok": bool(res.get("ok")), "sent_to": to, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 # ---- marketing reads + writes --------------------------------------------- #
 def read_market_metrics(args: dict, ctx: "ToolContext") -> dict:
-    """Read a market's supply/demand so Marketing doesn't pour spend into a
-    market with nothing to book. Live: counts active venues, providers serving
-    the city, and recent bookings from our DB. Sim/no-DB: zeros."""
     city = args.get("city")
     if ctx.db is None:
         return {"ok": True, "live": False, "city": city, "venues": 0,
@@ -294,7 +267,6 @@ def read_market_metrics(args: dict, ctx: "ToolContext") -> dict:
             areas = p.service_area_cities or []
             if not city or any(str(city).lower() in str(a).lower() for a in areas):
                 providers += 1
-        bookings = 0
         if city:
             bookings = (ctx.db.query(Booking).join(Venue, Booking.venue_id == Venue.id)
                         .filter(Venue.city.ilike(f"%{city}%")).count())
@@ -313,28 +285,36 @@ def generate_seo_content(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
         return _dry("generate_seo_content", args,
                     "draft SEO landing copy for the market (internal)")
-    return {"ok": False, "not_implemented": "live SEO publish disabled until "
-            "go-live; running dry_run only"}
+    city = args.get("city") or "your city"
+    meta_title = f"Event Venues & Services in {city} | VenuePlus"
+    body = (f"Planning an event in {city}? VenuePlus helps you book the perfect "
+            f"venue and the services to match — catering, photography, DJs, "
+            f"bartending, security, cleaning and more — in one place. Compare "
+            f"{city} spaces by capacity, price and availability, then add vetted "
+            f"local providers at checkout. Free to browse and book during our beta.")
+    return {"ok": True, "generated": True, "city": city,
+            "meta_title": meta_title, "content": body, "published": False,
+            "note": "copy generated; connect a CMS/landing target to publish"}
 
 
 def publish_social_post(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
-        return _dry("publish_social_post", args,
-                    "publish a launch announcement to social")
-    return {"ok": False, "not_implemented": "live social publish disabled "
-            "until go-live; running dry_run only"}
+        return _dry("publish_social_post", args, "publish a launch announcement to social")
+    return {"ok": False, "not_configured": "no social publishing integration connected "
+            "(add an X/LinkedIn/Buffer token to enable)"}
 
 
 def launch_paid_ad_campaign(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
         return _dry("launch_paid_ad_campaign", args,
                     "start a paid acquisition campaign within budget")
-    return {"ok": False, "not_implemented": "live ad spend disabled until "
-            "go-live; running dry_run only"}
+    return {"ok": False, "not_configured": "no ad-platform integration connected "
+            "(Google/Meta Ads API + budget approval required)"}
 
 
 def issue_referral_payout(args: dict, ctx: "ToolContext") -> dict:
-    # Hard-gated: only reaches here after explicit human approval. Still dry-run.
+    # Hard-gated: only reaches here after explicit human approval. Still dry-run
+    # (real payouts go through services/payments + Stripe, gated by FREE_MODE).
     return _dry("issue_referral_payout", args,
                 "pay a referral incentive (hard-gated; human-approved)")
 
@@ -356,9 +336,9 @@ class Tool:
         return self.handler(args or {}, ctx or ToolContext())
 
 
-# The tools the COO plan emits, each pinned to a risk tier. All three agents
-# (venues, providers, marketing) have real/dry-run handlers; money_movement +
-# legal handlers stay dry-run even post-approval and are guardrail hard-gated.
+# All three agents have real/dry-run handlers. money_movement + legal stay
+# dry-run even post-approval and are guardrail hard-gated. Social/ads return a
+# clean "not configured" until an integration is connected.
 REGISTRY: dict[str, Tool] = {t.name: t for t in [
     # venues (real agent)
     Tool("search_osm_venues", RiskLevel.READ,
@@ -366,7 +346,7 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
     Tool("list_existing_venues", RiskLevel.READ,
          "List venues we already carry in a market (dedupe)", list_existing_venues),
     Tool("draft_venue_listing", RiskLevel.INTERNAL_WRITE,
-         "Draft a venue listing for owner review", draft_venue_listing),
+         "Create an inactive draft venue listing from a candidate", draft_venue_listing),
     Tool("send_venue_outreach_email", RiskLevel.OUTBOUND,
          "Email a venue owner to invite a listing", send_venue_outreach_email),
     # providers (real agent)
@@ -404,7 +384,6 @@ def risk_for(name: str) -> RiskLevel | None:
 
 
 def execute(name: str, args: dict, ctx: "ToolContext | None" = None) -> dict:
-    """Run a tool's handler. Unknown tool -> structured error (never raises)."""
     tool = REGISTRY.get(name)
     if tool is None:
         return {"ok": False, "error": f"unknown tool: {name}"}
