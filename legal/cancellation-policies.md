@@ -1,6 +1,13 @@
 # Cancellation Policies
 
-VenuePlus offers three cancellation policy tiers that hosts can choose from when listing:
+## Free Beta
+While VenuePlus is in its **free beta**, bookings carry **no charge**, so there are **no monetary cancellation penalties**. A renter or host may cancel a booking before the event at no cost. The tiered refund policies below describe how cancellations will work once paid bookings are enabled — they do not apply while the service is free.
+
+Hosts and providers are asked, as a courtesy, to cancel as early as possible so the other side can re-plan.
+
+---
+
+VenuePlus offers three cancellation policy tiers that hosts can choose from when listing (applicable once paid bookings are enabled):
 
 ## Flexible
 - **>7 days before event:** 100% refund
