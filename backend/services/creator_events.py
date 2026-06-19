@@ -12,12 +12,20 @@ Fee model (single fee, no double-dip):
     settled this way).
   - Creator nets pool - costs. If negative, the gap is captured from the
     creator's deposit so venue/providers are still made whole.
+
+FREE MODE (config.is_free_mode):
+  - suggested_deposit_cents -> 0, so no no-show deposit is held and the publish
+    deposit gate is a no-op, and
+  - compute_settlement -> all zeros with no cost payouts, so settlement moves
+    no money (venue/providers/creator are paid nothing because tickets were
+    free). The service is free and no money moves.
 """
 import math
 import re
 import secrets
 from typing import Optional
 
+from config import is_free_mode
 from services import payments as p
 
 PLATFORM_FEE_PCT = p.PLATFORM_FEE_PCT
@@ -43,7 +51,8 @@ def ticket_breakdown(price_cents: int, quantity: int) -> dict:
     """What a buyer pays for `quantity` tickets at `price_cents` each.
 
     Reuses the same gross-up + fee logic as bookings so behaviour is
-    consistent across the product.
+    consistent across the product. In FREE MODE compute_breakdown returns
+    zeros, so the purchase endpoint takes its free-RSVP path (no PaymentIntent).
     """
     subtotal = max(0, price_cents) * max(1, quantity)
     b = p.compute_breakdown(subtotal)   # platform_fee, stripe_fee, total_charged
@@ -77,7 +86,23 @@ def compute_settlement(ticket_subtotal_cents: int, cost_line_items: list[dict]) 
     Returns a dict with the platform fee, the per-recipient payout rows
     (venue/providers at full cost, plus a "creator" row), and any deposit
     shortfall to capture.
+
+    In FREE MODE there are no paid tickets and no money moves, so the plan is
+    all zeros with no cost payouts.
     """
+    if is_free_mode():
+        return {
+            "ticket_subtotal_cents": 0,
+            "platform_fee_cents": 0,
+            "creator_pool_cents": 0,
+            "total_costs_cents": 0,
+            "creator_net_cents": 0,
+            "creator_raw_net_cents": 0,
+            "deposit_shortfall_cents": 0,
+            "cost_payouts": [],
+            "fully_funded": True,
+            "free_mode": True,
+        }
     S = max(0, ticket_subtotal_cents)
     platform_fee = int(round(S * PLATFORM_FEE_PCT))
     creator_pool = S - platform_fee
@@ -115,5 +140,9 @@ def compute_settlement(ticket_subtotal_cents: int, cost_line_items: list[dict]) 
 
 def suggested_deposit_cents(cost_line_items: list[dict]) -> int:
     """Default deposit = 100% of event cost, so the platform is fully
-    protected against an undersold/no-show event."""
+    protected against an undersold/no-show event.
+
+    In FREE MODE no deposit is required (no money moves)."""
+    if is_free_mode():
+        return 0
     return sum(max(0, li["gross_cents"]) for li in cost_line_items)

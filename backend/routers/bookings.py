@@ -1,6 +1,9 @@
 """Bookings: real checkout flow with locking, mandatory-service injection,
-status machine, and policy-driven cancellation. Payment-pending — Stripe slot
-left for the final wave.
+status machine, and policy-driven cancellation.
+
+Payments are handled in routers/payments.py. In FREE MODE (config.is_free_mode)
+a new booking skips the payment step entirely and goes straight to PENDING
+(host approval); no Payment/PaymentIntent is ever created.
 """
 from datetime import datetime, timezone, timedelta
 from typing import List
@@ -9,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from auth import get_current_active_user
+from config import is_free_mode
 from database import get_db
 from models import (User, Venue, Booking, BookingService, ServiceProvider,
                     VenueRequirement, BookingStatus, UserRole, Notification,
@@ -105,6 +109,9 @@ def create_booking(data: BookingCreate,
                 notes=f"Auto-added mandatory: {req.service_category.value}",
             ))
 
+    # FREE MODE: no payment step — go straight to host approval.
+    initial_status = (BookingStatus.PENDING if is_free_mode()
+                      else BookingStatus.AWAITING_PAYMENT)
     booking = Booking(
         renter_id=current_user.id,
         venue_id=venue.id,
@@ -115,7 +122,7 @@ def create_booking(data: BookingCreate,
         venue_cost=venue_cost,
         service_cost=0.0,
         total_cost=venue_cost,
-        status=BookingStatus.AWAITING_PAYMENT,
+        status=initial_status,
         special_requests=data.special_requests,
     )
     db.add(booking); db.flush()
@@ -186,7 +193,8 @@ def confirm_booking(booking_id: int,
                     current_user: User = Depends(get_current_active_user),
                     db: Session = Depends(get_db)):
     """Host accepts the booking. If a payment has been authorized for this
-    booking, also captures it via Stripe (or sim)."""
+    booking, also captures it via Stripe (or sim). In FREE MODE there is no
+    payment, so this simply confirms the booking."""
     b = db.query(Booking).filter(Booking.id == booking_id).first()
     if not b:
         raise HTTPException(404, "Booking not found")
@@ -224,7 +232,7 @@ def cancel_booking(booking_id: int,
        - >7 days out: full refund eligible
        - 1-7 days:    50% refund eligible
        - <1 day:      no refund
-       (Refund execution belongs to Stripe wave.)
+       Refunds only apply when there was a payment (none in FREE MODE).
     """
     b = db.query(Booking).filter(Booking.id == booking_id).first()
     if not b:
