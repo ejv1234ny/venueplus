@@ -51,7 +51,7 @@ app.mount("/static", StaticFiles(directory=str(UPLOAD_DIR)), name="static")
 from routers import (auth, venues, services, bookings, users, events,
                      uploads, search, matching, messaging, reviews,
                      notifications, admin, providers, payments, creator_events)
-from routers import agents, dashboard
+from routers import agents, dashboard, telegram
 
 app.include_router(auth.router,          prefix="/api/auth",          tags=["Auth"])
 app.include_router(users.router,         prefix="/api/users",         tags=["Users"])
@@ -71,6 +71,7 @@ app.include_router(payments.router,      prefix="/api/payments",      tags=["Pay
 app.include_router(creator_events.router, prefix="/api/creator-events", tags=["Creator Events"])
 app.include_router(agents.router,        prefix="/api/agents",        tags=["Agents"])
 app.include_router(dashboard.router,     prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
+app.include_router(telegram.router,      prefix="/api/telegram",      tags=["Telegram"])
 
 
 @app.get("/")
