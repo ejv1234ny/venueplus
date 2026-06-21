@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { FiSearch, FiMapPin, FiUsers, FiCalendar, FiCheckCircle } from 'react-icons/fi';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -56,6 +57,16 @@ export default function HomePage() {
       <section className="relative bg-gradient-to-br from-primary-600 via-primary-500 to-accent-500 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
           <div className="text-center max-w-4xl mx-auto">
+            <div className="mx-auto mb-8 inline-flex items-center justify-center w-24 h-24 rounded-full bg-white shadow-2xl">
+              <Image
+                src="/venueplus-icon.png"
+                alt="VenuePlus"
+                width={72}
+                height={72}
+                priority
+                className="w-16 h-16"
+              />
+            </div>
             <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
               Find Your Perfect Event Space
               <span className="block text-accent-200">+ Essential Services</span>

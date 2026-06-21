@@ -1,0 +1,13 @@
+{
+  "name": "VenuePlus",
+  "short_name": "VenuePlus",
+  "description": "Book unique event spaces and essential services all in one place",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007db1",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
