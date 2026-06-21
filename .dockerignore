@@ -1,0 +1,9 @@
+frontend/
+mobile/
+venueplus-agents/
+legal/
+**/__pycache__/
+**/*.pyc
+**/node_modules/
+.git/
+*.md
