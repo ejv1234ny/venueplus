@@ -188,9 +188,12 @@ def _heuristic(text: str) -> tuple[str, str]:
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
-def _operator_admin_id(db: Session) -> int:
+def _operator_admin_id(db: Session):
+    """Admin user id to stamp on a resolution, or None when there's no admin
+    user yet. The Telegram bridge is logged-out and ``resolved_by`` is a
+    nullable FK, so NULL is valid — but a bogus id like 0 violates the FK."""
     admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
-    return admin.id if admin else 0
+    return admin.id if admin else None
 
 
 def _open_escalations(db: Session, run_id: int | None = None):
