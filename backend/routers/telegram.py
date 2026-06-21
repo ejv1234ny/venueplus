@@ -4,6 +4,14 @@ A logged-out, phone-friendly control surface for the agent fleet. You message a
 Telegram bot; it drives the same COO orchestrator the admin dashboard uses
 (``agents.orchestrator``) and texts back the result. No app, no login screen.
 
+Natural language:
+  You can just talk to it — "how's it going?", "grow supply in Austin",
+  "what's waiting on me?", "approve the social post", "pause everything".
+  When ``ANTHROPIC_API_KEY`` is set, an LLM maps your message to one of the
+  commands below and runs it immediately, replying in plain sentences. Slash
+  commands still work exactly as before (and are the deterministic fallback
+  when no key is configured).
+
 Security model (defence in depth):
   * ``TELEGRAM_BOT_TOKEN``        — the bot's API token (from @BotFather).
   * ``TELEGRAM_ALLOWED_CHAT_IDS`` — comma-separated chat ids allowed to operate
@@ -29,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 
@@ -40,8 +49,12 @@ from models import User, UserRole
 from models_agents import AgentRun, AgentEscalation, EscalationStatus
 from agents import orchestrator
 from agents.orchestrator import FleetDisabledError
+from agents.llm import LLMProvider
 
 router = APIRouter()
+
+_COMMANDS = {"goal", "status", "runs", "run", "escalations",
+             "approve", "reject", "kill", "help", "start"}
 
 
 def _allowed_chat_ids() -> set[str]:
@@ -58,7 +71,7 @@ def send_message(chat_id: str | int, text: str) -> None:
     try:
         data = urllib.parse.urlencode({
             "chat_id": str(chat_id), "text": text[:4096],
-            "parse_mode": "Markdown", "disable_web_page_preview": "true",
+            "disable_web_page_preview": "true",
         }).encode()
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage", data=data)
@@ -68,11 +81,16 @@ def send_message(chat_id: str | int, text: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Command parsing (pure, unit-testable)                                       #
+# Command parsing                                                             #
 # --------------------------------------------------------------------------- #
 def parse_command(text: str) -> tuple[str, str]:
     """('goal', 'grow Austin') from '/goal grow Austin'. Plain text (no slash)
-    is treated as a goal. Returns (command, argument)."""
+    is treated as a goal. Returns (command, argument).
+
+    NOTE: kept for the slash path and for backward-compat / unit tests. The
+    webhook routes non-slash text through ``interpret_nl`` instead so casual
+    messages don't all become goals.
+    """
     text = (text or "").strip()
     if not text:
         return ("", "")
@@ -83,111 +101,294 @@ def parse_command(text: str) -> tuple[str, str]:
     return (cmd, rest.strip())
 
 
-HELP = (
-    "*VenuePlus COO*\n"
-    "/goal <text> — run a goal (add `| City` to target a market)\n"
-    "/status — fleet state + open approvals\n"
-    "/runs — recent runs\n"
-    "/run <id> — run trace\n"
-    "/escalations — approval queue\n"
-    "/approve <id> · /reject <id>\n"
-    "/kill on|off — kill switch\n"
+_INTERPRETER_SYSTEM = (
+    "You translate a marketplace operator's casual message into ONE structured "
+    "command for the VenuePlus COO agent bridge. Reply with ONLY a JSON object "
+    "like {\"command\":\"status\",\"argument\":\"\"} and nothing else.\n\n"
+    "Commands and their argument:\n"
+    "- status (arg \"\"): how things are going, are we live, any updates.\n"
+    "- runs (arg \"\"): recent activity / history / what have you done lately.\n"
+    "- run (arg = a run id number, or \"latest\" for the most recent): show a "
+    "specific run's detail.\n"
+    "- escalations (arg \"\"): what needs my approval / anything waiting on me.\n"
+    "- approve (arg = an escalation id number, or a short descriptor of which "
+    "one e.g. \"social\"): approve a pending action. Phrases like \"yes do it\", "
+    "\"go ahead\", \"approve it\" with no specifics -> argument \"\".\n"
+    "- reject (arg = an escalation id number or descriptor): decline a pending "
+    "action. \"no\", \"skip it\", \"don't post that\".\n"
+    "- kill (arg = \"on\" to STOP/pause the fleet, \"off\" to resume it): "
+    "\"stop everything\"/\"pause\" -> on; \"resume\"/\"turn it back on\" -> off.\n"
+    "- goal (arg = the objective; if a city/market is named, append \" | City ST\"): "
+    "any instruction to get work done, e.g. grow supply, recruit providers, "
+    "find venues.\n"
+    "- help (arg \"\"): what can you do / commands.\n"
+    "- unknown (arg \"\"): only if the message is unintelligible or unrelated.\n\n"
+    "Examples:\n"
+    "\"how are things looking?\" -> {\"command\":\"status\",\"argument\":\"\"}\n"
+    "\"grow supply in austin tx\" -> {\"command\":\"goal\",\"argument\":\"grow supply | Austin TX\"}\n"
+    "\"recruit more caterers in miami\" -> {\"command\":\"goal\",\"argument\":\"recruit caterers | Miami FL\"}\n"
+    "\"what's waiting on me?\" -> {\"command\":\"escalations\",\"argument\":\"\"}\n"
+    "\"approve the social post\" -> {\"command\":\"approve\",\"argument\":\"social\"}\n"
+    "\"no, skip that\" -> {\"command\":\"reject\",\"argument\":\"\"}\n"
+    "\"show me the last run\" -> {\"command\":\"run\",\"argument\":\"latest\"}\n"
+    "\"pause everything\" -> {\"command\":\"kill\",\"argument\":\"on\"}\n"
+    "Respond with JSON only."
 )
 
 
+def interpret_nl(text: str) -> tuple[str, str]:
+    """Map a free-text message to (command, argument) using the LLM. Falls back
+    to deterministic heuristics when no ANTHROPIC_API_KEY is configured."""
+    provider = LLMProvider()
+    if not provider.is_real:
+        return _heuristic(text)
+    try:
+        turn = provider.complete(
+            system=_INTERPRETER_SYSTEM,
+            messages=[{"role": "user", "content": text}],
+        )
+        raw = (turn.get("text") or "").strip()
+        m = re.search(r"\{.*\}", raw, re.S)
+        if m:
+            data = json.loads(m.group(0))
+            cmd = str(data.get("command", "")).lower().strip()
+            arg = str(data.get("argument", "")).strip()
+            if cmd in _COMMANDS or cmd == "unknown":
+                return (cmd, arg)
+    except Exception as e:
+        print(f"[telegram] NL interpret failed: {type(e).__name__}: {e}")
+    return _heuristic(text)
+
+
+def _heuristic(text: str) -> tuple[str, str]:
+    """Tiny keyword router for the no-LLM / failure path."""
+    t = (text or "").strip().lower()
+    if not t:
+        return ("help", "")
+    if any(w in t for w in ("status", "how are", "how's it", "how is it",
+                            "what's up", "whats up", "are we live", "update")):
+        return ("status", "")
+    if "waiting on me" in t or "need my approval" in t or "pending" in t \
+            or "escalation" in t:
+        return ("escalations", "")
+    if t.startswith("approve") or t == "yes" or "go ahead" in t:
+        return ("approve", re.sub(r"^approve\s*", "", t))
+    if t.startswith("reject") or t in ("no", "skip", "skip it"):
+        return ("reject", re.sub(r"^reject\s*", "", t))
+    if any(w in t for w in ("pause", "stop everything", "kill")):
+        return ("kill", "on")
+    if any(w in t for w in ("resume", "turn it back on", "unpause")):
+        return ("kill", "off")
+    if "recent run" in t or t in ("runs", "history"):
+        return ("runs", "")
+    # Default: treat as a goal (legacy behaviour).
+    return ("goal", text.strip())
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                      #
+# --------------------------------------------------------------------------- #
 def _operator_admin_id(db: Session) -> int:
     admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
     return admin.id if admin else 0
 
 
-def _fmt_run(db: Session, run: AgentRun) -> str:
+def _open_escalations(db: Session, run_id: int | None = None):
+    q = db.query(AgentEscalation).filter(
+        AgentEscalation.status == EscalationStatus.OPEN)
+    if run_id is not None:
+        q = q.filter(AgentEscalation.run_id == run_id)
+    return q.order_by(AgentEscalation.created_at.desc()).all()
+
+
+def _resolve_escalation(db: Session, arg: str):
+    """Find the escalation a user means. Returns an AgentEscalation, None
+    (not found / none open), or the string 'AMBIGUOUS'."""
+    arg = (arg or "").strip()
+    digits = re.search(r"\d+", arg)
+    if digits:
+        return db.query(AgentEscalation).filter(
+            AgentEscalation.id == int(digits.group(0))).first()
+    opens = _open_escalations(db)
+    if not opens:
+        return None
+    low = arg.lower()
+    if low:
+        for e in opens:
+            if low in e.tool.lower() or low in e.agent.lower():
+                return e
+    if len(opens) == 1:
+        return opens[0]
+    return "AMBIGUOUS"
+
+
+def _say_run(db: Session, run: AgentRun, *, dispatched: bool = False) -> str:
     s = run.summary or {}
-    lines = [f"*Run #{run.id}* — {run.status.value}",
-             f"goal: {run.goal[:200]}"]
-    if s:
-        lines.append(f"jobs {s.get('jobs_planned',0)} · actions "
-                     f"{s.get('actions_executed',0)}/{s.get('actions_total',0)} "
-                     f"· awaiting approval {s.get('needs_approval',0)}")
-    open_escs = db.query(AgentEscalation).filter(
-        AgentEscalation.run_id == run.id,
-        AgentEscalation.status == EscalationStatus.OPEN).all()
-    for e in open_escs:
-        lines.append(f"  ⏳ #{e.id} {e.agent}/{e.tool} ({e.risk.value}) — "
-                     f"/approve {e.id} · /reject {e.id}")
-    return "\n".join(lines)
+    jobs = s.get("jobs_planned", 0)
+    done = s.get("actions_executed", 0)
+    total = s.get("actions_total", 0)
+    opens = _open_escalations(db, run.id)
+
+    bits = []
+    if dispatched:
+        bits.append(f'Done — I put the fleet on "{run.goal[:120]}".')
+    else:
+        bits.append(f"Run #{run.id} ({run.status.value}) — goal: "
+                    f"{run.goal[:120]}.")
+    if total:
+        bits.append(f"It planned {jobs} job{'' if jobs == 1 else 's'} and "
+                    f"completed {done} of {total} "
+                    f"action{'' if total == 1 else 's'}.")
+    if opens:
+        if len(opens) == 1:
+            e = opens[0]
+            bits.append(f"One thing needs your OK: {e.agent}'s {e.tool} "
+                        f"(#{e.id}). Say \"approve it\" or \"reject it\".")
+        else:
+            lst = ", ".join(f"{e.tool} (#{e.id})" for e in opens)
+            bits.append(f"{len(opens)} actions need your approval: {lst}. "
+                        f"Say e.g. \"approve #{opens[0].id}\".")
+    elif (run.status.value or "").lower() in ("completed", "done", "success"):
+        bits.append("Everything ran clean — nothing waiting on you.")
+    return " ".join(bits)
 
 
-def process_message(db: Session, text: str) -> str:
-    """Turn an inbound message into a reply string. The single place commands
-    are interpreted; the webhook just does transport + auth."""
-    cmd, arg = parse_command(text)
+def _latest_run(db: Session) -> AgentRun | None:
+    return db.query(AgentRun).order_by(
+        AgentRun.created_at.desc(), AgentRun.id.desc()).first()
 
-    if cmd in ("start", "help", ""):
+
+HELP = (
+    "I'm your VenuePlus COO — just talk to me. You can say things like:\n"
+    "• \"how's it going?\" — current status\n"
+    "• \"grow supply in Austin TX\" — kick off a goal\n"
+    "• \"what's waiting on me?\" — see what needs approval\n"
+    "• \"approve the social post\" / \"reject it\" — decide on a pending action\n"
+    "• \"show me the last run\" — details on a run\n"
+    "• \"pause everything\" / \"resume\" — kill switch\n"
+    "Slash commands (/goal, /status, /runs, /run, /escalations, /approve, "
+    "/reject, /kill) work too."
+)
+
+
+# --------------------------------------------------------------------------- #
+# Dispatch                                                                     #
+# --------------------------------------------------------------------------- #
+def _dispatch(db: Session, cmd: str, arg: str) -> str:
+    if cmd in ("start", "help", "", "unknown"):
+        if cmd == "unknown":
+            return ("I'm not sure what you'd like me to do. " + HELP)
         return HELP
 
     if cmd == "goal":
-        if not arg:
-            return "Usage: /goal <what you want done> (optional `| City`)"
+        if not arg.strip():
+            return ('Tell me what you\'d like done — e.g. '
+                    '"grow supply in Austin TX".')
         goal, _, city = arg.partition("|")
         try:
-            run = orchestrator.run_goal(db, goal.strip(), (city.strip() or None))
+            run = orchestrator.run_goal(db, goal.strip(),
+                                        (city.strip() or None))
         except FleetDisabledError:
-            return "🛑 Fleet is OFF (kill switch). Turn it on: /kill off"
-        return "✅ COO dispatched the fleet.\n" + _fmt_run(db, run)
+            return ('The fleet is paused 🔴 (kill switch is on). '
+                    'Say "resume" to turn it back on, then try again.')
+        return _say_run(db, run, dispatched=True)
 
     if cmd == "status":
         enabled = orchestrator.get_fleet_state(db).enabled
-        n = db.query(AgentEscalation).filter(
-            AgentEscalation.status == EscalationStatus.OPEN).count()
-        return (f"Fleet: {'🟢 ON' if enabled else '🔴 OFF'}\n"
-                f"Open approvals: {n}")
+        n = len(_open_escalations(db))
+        base = ("The fleet is live 🟢" if enabled
+                else "The fleet is paused 🔴 (kill switch on)")
+        if n:
+            return (f"{base}, and {n} action{'' if n == 1 else 's'} "
+                    f"{'is' if n == 1 else 'are'} waiting for your approval. "
+                    f'Say "what\'s waiting on me?" to see them.')
+        return f"{base}, and there's nothing waiting on you right now."
 
     if cmd == "runs":
         rows = db.query(AgentRun).order_by(
             AgentRun.created_at.desc(), AgentRun.id.desc()).limit(5).all()
         if not rows:
-            return "No runs yet. Start one: /goal grow supply in Austin"
-        return "\n".join(
-            f"#{r.id} [{r.status.value}] {r.goal[:60]}" for r in rows)
+            return ('No runs yet. Tell me something like '
+                    '"grow supply in Austin" to start one.')
+        body = "\n".join(
+            f"• #{r.id} [{r.status.value}] {r.goal[:60]}" for r in rows)
+        return "Here are the most recent runs:\n" + body
 
     if cmd == "run":
-        if not arg.isdigit():
-            return "Usage: /run <id>"
-        run = db.query(AgentRun).filter(AgentRun.id == int(arg)).first()
-        return _fmt_run(db, run) if run else f"Run #{arg} not found"
+        run = None
+        digits = re.search(r"\d+", arg or "")
+        if digits:
+            run = db.query(AgentRun).filter(
+                AgentRun.id == int(digits.group(0))).first()
+        else:
+            run = _latest_run(db)
+        if not run:
+            return ("I couldn't find that run. Say \"recent runs\" to see "
+                    "what's there.")
+        return _say_run(db, run)
 
     if cmd == "escalations":
-        rows = db.query(AgentEscalation).filter(
-            AgentEscalation.status == EscalationStatus.OPEN).order_by(
-            AgentEscalation.created_at.desc()).all()
+        rows = _open_escalations(db)
         if not rows:
-            return "No open approvals. 🎉"
-        return "\n".join(
-            f"#{e.id} {e.agent}/{e.tool} ({e.risk.value}) "
-            f"run #{e.run_id} — /approve {e.id} · /reject {e.id}" for e in rows)
+            return "Nothing's waiting on you right now. 🎉"
+        if len(rows) == 1:
+            e = rows[0]
+            return (f"One action needs your approval: {e.agent}'s {e.tool} "
+                    f"(#{e.id}, {e.risk.value}) from run #{e.run_id}. "
+                    f'Say "approve it" or "reject it".')
+        body = "\n".join(
+            f"• {e.tool} (#{e.id}) — {e.agent}, run #{e.run_id} "
+            f"({e.risk.value})" for e in rows)
+        return ("These actions need your approval:\n" + body
+                + f'\nSay e.g. "approve #{rows[0].id}".')
 
     if cmd in ("approve", "reject"):
-        if not arg.isdigit():
-            return f"Usage: /{cmd} <escalation id>"
-        e = db.query(AgentEscalation).filter(
-            AgentEscalation.id == int(arg)).first()
-        if not e:
-            return f"Escalation #{arg} not found"
+        e = _resolve_escalation(db, arg)
+        if e is None:
+            return ('I couldn\'t find that approval. Say "what\'s waiting on '
+                    'me?" to see the open ones.')
+        if e == "AMBIGUOUS":
+            rows = _open_escalations(db)
+            body = "\n".join(
+                f"• {x.tool} (#{x.id}) — {x.agent}" for x in rows)
+            return ("There's more than one pending — which did you mean?\n"
+                    + body + '\nSay e.g. "approve #" plus the id.')
         if e.status != EscalationStatus.OPEN:
-            return f"Escalation #{arg} already {e.status.value}"
+            return f"That one ({e.tool}, #{e.id}) is already {e.status.value}."
         orchestrator.resolve_escalation(
-            db, e, approve=(cmd == "approve"), admin_id=_operator_admin_id(db))
-        return f"{'✅ Approved' if cmd == 'approve' else '🚫 Rejected'} #{arg} ({e.tool})"
+            db, e, approve=(cmd == "approve"),
+            admin_id=_operator_admin_id(db))
+        if cmd == "approve":
+            return (f"Done — I approved {e.tool} (#{e.id}). "
+                    "The run will carry on from there.")
+        return (f"Okay — I rejected {e.tool} (#{e.id}); it won't run.")
 
     if cmd == "kill":
-        a = arg.strip().lower()
+        a = (arg or "").strip().lower()
         if a not in ("on", "off"):
-            return "Usage: /kill on  (disable fleet)  |  /kill off  (enable)"
-        # /kill on  -> disable the fleet (enabled=False)
+            return ('Did you want to pause or resume the fleet? '
+                    'Say "pause everything" or "resume".')
+        # "on" => pause the fleet (enabled=False); "off" => resume (enabled=True)
         state = orchestrator.set_fleet_enabled(db, enabled=(a == "off"))
-        return f"Fleet now {'🟢 ON' if state.enabled else '🔴 OFF'}"
+        if state.enabled:
+            return "The fleet is live again 🟢 — it'll act on new goals."
+        return ('The fleet is paused 🔴 — nothing will run until you say '
+                '"resume".')
 
-    return f"Unknown command /{cmd}. Try /help"
+    return "I'm not sure what you meant. " + HELP
+
+
+def process_message(db: Session, text: str) -> str:
+    """Turn an inbound message into a reply string. Slash messages use the
+    literal command; everything else is interpreted as natural language."""
+    text = (text or "").strip()
+    if not text:
+        return HELP
+    if text.startswith("/"):
+        cmd, arg = parse_command(text)
+    else:
+        cmd, arg = interpret_nl(text)
+    return _dispatch(db, cmd, arg)
 
 
 # --------------------------------------------------------------------------- #
