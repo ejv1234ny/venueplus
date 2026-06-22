@@ -44,29 +44,15 @@ def _save_local(stream: BinaryIO, filename: str, content_type: str) -> tuple[str
 
 
 def _save_s3(stream: BinaryIO, filename: str, content_type: str) -> tuple[str, int, str]:
-    try:
-        import boto3  # optional dep, only when S3 is configured
-    except ImportError:
-        raise RuntimeError("boto3 not installed; pip install boto3")
-
     bucket = os.environ["S3_BUCKET"]
-    region = os.getenv("S3_REGION", "us-east-1")
-    endpoint = os.getenv("S3_ENDPOINT")
-    s3 = boto3.client("s3", region_name=region, endpoint_url=endpoint)
+    s3 = _s3_client()
     name = _safe_name(filename)
     body = stream.read()
     if len(body) > MAX_BYTES:
         raise ValueError("file too large")
     s3.put_object(Bucket=bucket, Key=name, Body=body,
                   ContentType=content_type)
-    public = os.getenv("S3_PUBLIC_URL")
-    if public:
-        url = f"{public.rstrip('/')}/{name}"
-    elif endpoint:
-        url = f"{endpoint.rstrip('/')}/{bucket}/{name}"
-    else:
-        url = f"https://{bucket}.s3.{region}.amazonaws.com/{name}"
-    return url, len(body), "s3"
+    return public_url(name), len(body), "s3"
 
 
 def save(stream: BinaryIO, filename: str, content_type: str) -> tuple[str, int, str]:
@@ -76,3 +62,46 @@ def save(stream: BinaryIO, filename: str, content_type: str) -> tuple[str, int, 
     if os.getenv("S3_BUCKET"):
         return _save_s3(stream, filename, content_type)
     return _save_local(stream, filename, content_type)
+
+
+# --------------------------------------------------------------------------- #
+# S3/R2 maintenance helpers (used by the orphan-cleanup cron)
+# --------------------------------------------------------------------------- #
+def is_s3() -> bool:
+    return bool(os.getenv("S3_BUCKET"))
+
+
+def _s3_client():
+    try:
+        import boto3  # optional dep, only when S3 is configured
+    except ImportError:
+        raise RuntimeError("boto3 not installed; pip install boto3")
+    return boto3.client("s3", region_name=os.getenv("S3_REGION", "us-east-1"),
+                        endpoint_url=os.getenv("S3_ENDPOINT"))
+
+
+def public_url(key: str) -> str:
+    """Public URL for a stored object key. MUST match what _save_s3 returns, so the
+    cleanup cron can compare keys against the URLs persisted in venue/provider images."""
+    public = os.getenv("S3_PUBLIC_URL")
+    if public:
+        return f"{public.rstrip('/')}/{key}"
+    endpoint = os.getenv("S3_ENDPOINT")
+    bucket = os.environ["S3_BUCKET"]
+    region = os.getenv("S3_REGION", "us-east-1")
+    if endpoint:
+        return f"{endpoint.rstrip('/')}/{bucket}/{key}"
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+
+
+def iter_objects():
+    """Yield (key, last_modified) for every object in the bucket."""
+    bucket = os.environ["S3_BUCKET"]
+    s3 = _s3_client()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket):
+        for obj in page.get("Contents", []):
+            yield obj["Key"], obj["LastModified"]
+
+
+def delete_object(key: str) -> None:
+    _s3_client().delete_object(Bucket=os.environ["S3_BUCKET"], Key=key)
