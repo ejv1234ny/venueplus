@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import {
   FiCalendar, FiMapPin, FiDollarSign, FiClock,
-  FiChevronDown, FiChevronUp, FiXCircle, FiAlertCircle,
+  FiChevronDown, FiChevronUp, FiXCircle,
 } from 'react-icons/fi';
 import { bookingsAPI, venuesAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
@@ -14,6 +14,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import StatusBadge from '@/components/StatusBadge';
 import EmptyState from '@/components/EmptyState';
 import toast from 'react-hot-toast';
+import Alert from '@/components/Alert';
 
 const statusFilters = ['all', 'awaiting_payment', 'pending', 'confirmed', 'completed', 'cancelled'];
 
@@ -80,12 +81,7 @@ function BookingsContent() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <h1 className="section-title mb-6">My Bookings</h1>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
-            <FiAlertCircle className="text-red-500 mt-0.5 flex-shrink-0" />
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
-        )}
+        {error && <Alert variant="error" className="mb-6">{error}</Alert>}
 
         {/* Filter Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { FiSearch } from 'react-icons/fi';
 import { servicesAPI } from '@/lib/api';
 import ServiceCard from '@/components/ServiceCard';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import { ServiceGridSkeleton } from '@/components/Skeleton';
 import EmptyState from '@/components/EmptyState';
 
 const categories = [
@@ -130,7 +130,7 @@ export default function ServicesPage() {
 
         {/* Results */}
         {loading ? (
-          <LoadingSpinner message="Finding service providers..." />
+          <ServiceGridSkeleton />
         ) : services.length === 0 ? (
           <EmptyState
             icon={<FiSearch size={48} />}

@@ -278,11 +278,11 @@ export default function VenueDetailPage() {
         <div className="rounded-xl overflow-hidden mb-8">
           {venue.images && venue.images.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 h-64 md:h-96">
-              <img src={venue.images[0]} alt={venue.title} className="w-full h-full object-cover" />
+              <img src={venue.images[0]} alt={venue.title} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               {venue.images.length > 1 && (
                 <div className="hidden md:grid grid-cols-2 gap-2">
                   {venue.images.slice(1, 5).map((img: string, i: number) => (
-                    <img key={i} src={img} alt={`${venue.title} ${i + 2}`} className="w-full h-full object-cover" />
+                    <img key={i} src={img} alt={`${venue.title} ${i + 2}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   ))}
                 </div>
               )}

@@ -6,6 +6,8 @@ import {
   Elements, PaymentElement, useStripe, useElements,
 } from '@stripe/react-stripe-js';
 import { paymentsAPI } from '@/lib/api';
+import Alert from '@/components/Alert';
+import { Skeleton } from '@/components/Skeleton';
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 const stripePromise: Promise<Stripe | null> | null = PUBLISHABLE_KEY
@@ -84,7 +86,24 @@ export default function CheckoutPage() {
     } finally { setLoading(false); }
   };
 
-  if (!breakdown) return <div className="p-8">Loading checkout...</div>;
+  if (error && !breakdown) return (
+    <div className="max-w-2xl mx-auto p-6">
+      <Alert variant="error" title="Couldn’t load checkout">{error}</Alert>
+    </div>
+  );
+  if (!breakdown) return (
+    <div className="max-w-2xl mx-auto p-6">
+      <Skeleton className="h-9 w-48 mb-6" />
+      <div className="bg-white border rounded-lg p-6 mb-6 space-y-3">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-7 w-40 mt-2" />
+      </div>
+      <Skeleton className="h-14 w-full" />
+    </div>
+  );
 
   // The client_secret tells us if we're in real Stripe mode
   const isRealStripe = PUBLISHABLE_KEY && pi?.client_secret &&
@@ -96,7 +115,7 @@ export default function CheckoutPage() {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Checkout</h1>
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded mb-4">{error}</div>}
+      {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
       <div className="bg-white border rounded-lg p-6 mb-6">
         <h2 className="font-bold mb-4">Order summary</h2>

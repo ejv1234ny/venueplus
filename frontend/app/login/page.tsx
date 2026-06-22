@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { FiMail, FiLock, FiAlertCircle } from 'react-icons/fi';
+import { FiMail, FiLock } from 'react-icons/fi';
+import Alert from '@/components/Alert';
+import Button from '@/components/Button';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,12 +62,7 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
-              <FiAlertCircle className="text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-red-700 text-sm">{error}</p>
-            </div>
-          )}
+          {error && <Alert variant="error" className="mb-6">{error}</Alert>}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
@@ -126,13 +123,9 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
+            <Button type="submit" loading={loading} fullWidth>
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
           </form>
 
           <div className="mt-6 text-center">

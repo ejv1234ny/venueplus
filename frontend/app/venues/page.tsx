@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { FiSearch, FiX, FiMap, FiList, FiRefreshCw } from 'react-icons/fi';
 import { venuesAPI } from '@/lib/api';
 import VenueCard from '@/components/VenueCard';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import { VenueListSkeleton } from '@/components/Skeleton';
 import EmptyState from '@/components/EmptyState';
 import MapView, { MapBounds } from '@/components/MapView';
 import LocationSearch, { LocationResult } from '@/components/LocationSearch';
@@ -257,7 +257,7 @@ export default function VenuesPage() {
 
             {/* Venue Cards */}
             {loading ? (
-              <LoadingSpinner message="Finding venues..." />
+              <VenueListSkeleton />
             ) : venues.length === 0 ? (
               <EmptyState
                 icon={<FiSearch size={48} />}

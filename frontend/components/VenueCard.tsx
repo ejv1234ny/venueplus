@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { FiMapPin, FiUsers, FiDollarSign } from 'react-icons/fi';
 
 export default function VenueCard({ venue }: { venue: any }) {
@@ -9,10 +10,12 @@ export default function VenueCard({ venue }: { venue: any }) {
       {/* Image */}
       <div className="h-48 bg-gradient-to-br from-primary-400 to-accent-400 relative overflow-hidden">
         {venue.images && venue.images.length > 0 ? (
-          <img
+          <Image
             src={venue.images[0]}
             alt={venue.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
