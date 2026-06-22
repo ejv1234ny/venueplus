@@ -2,7 +2,8 @@
 
 Backends:
   - local (default): saves to ./uploads/ and serves via /static
-  - s3: set S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, optional S3_ENDPOINT (R2/Spaces compatible)
+  - s3: set S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, optional S3_ENDPOINT (R2/Spaces compatible),
+        optional S3_PUBLIC_URL (public read base, e.g. an R2 r2.dev or custom domain)
 """
 import os
 import secrets
@@ -57,8 +58,11 @@ def _save_s3(stream: BinaryIO, filename: str, content_type: str) -> tuple[str, i
     if len(body) > MAX_BYTES:
         raise ValueError("file too large")
     s3.put_object(Bucket=bucket, Key=name, Body=body,
-                  ContentType=content_type, ACL="public-read")
-    if endpoint:
+                  ContentType=content_type)
+    public = os.getenv("S3_PUBLIC_URL")
+    if public:
+        url = f"{public.rstrip('/')}/{name}"
+    elif endpoint:
         url = f"{endpoint.rstrip('/')}/{bucket}/{name}"
     else:
         url = f"https://{bucket}.s3.{region}.amazonaws.com/{name}"
