@@ -1,0 +1,37 @@
+/* ============================================================
+   VenuePlus — Radii, shadows, borders, motion
+   Cards are rounded-xl with soft shadows; buttons rounded-lg;
+   badges & pills fully rounded. Transitions are quick color/shadow fades.
+   ============================================================ */
+:root {
+  /* Border radius */
+  --radius-sm:   0.375rem; /* 6  — small inputs, chips inside panels */
+  --radius-md:   0.5rem;   /* 8  — buttons, inputs (rounded-lg) */
+  --radius-lg:   0.75rem;  /* 12 — cards, panels (rounded-xl) */
+  --radius-xl:   1rem;     /* 16 — large media blocks */
+  --radius-full: 9999px;   /* pills, badges, avatars, search bar */
+
+  /* Shadows — soft, neutral, no color tint */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.18);
+  /* Card resting + hover (the signature card lift) */
+  --shadow-card:       var(--shadow-sm);
+  --shadow-card-hover: var(--shadow-md);
+
+  /* Borders */
+  --border-width: 1px;
+  --border-width-emphasis: 2px; /* outline buttons, focus */
+
+  /* Motion */
+  --duration-fast:   150ms; /* @kind other */
+  --duration-base:   200ms; /* @kind other */ /* the app's default transition */
+  --duration-slow:   300ms; /* @kind other */ /* image scale on card hover */
+  --ease-standard:   cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --transition-colors: color var(--duration-base) var(--ease-standard),
+                       background-color var(--duration-base) var(--ease-standard),
+                       border-color var(--duration-base) var(--ease-standard);
+  --transition-shadow: box-shadow var(--duration-base) var(--ease-standard);
+}

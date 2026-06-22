@@ -1,0 +1,4 @@
+/* VenuePlus uses Inter as its single typeface across the entire product.
+   The live app loads it from Google Fonts; we mirror that here so consumers
+   get the exact metrics. Weights 300–800 are all referenced in the codebase. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');

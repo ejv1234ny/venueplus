@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VenuePlus · Dashboards</title>
+<link rel="stylesheet" href="styles.css" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); background: var(--surface-console); color: var(--neutral-900); }
+  header { background: #fff; border-bottom: 1px solid var(--border-default); padding: 22px 32px; display: flex; align-items: center; gap: 14px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px; }
+  h1.title { margin: 0; font-size: 19px; font-weight: 800; }
+  .sub { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
+  .group-label { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin: 30px 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  a.card { display: flex; flex-direction: column; text-decoration: none; color: inherit; background: #fff; border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); transition: box-shadow .2s, transform .2s; }
+  a.card:hover { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+  .thumb { height: 86px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .01em; }
+  .body { padding: 14px 16px; }
+  .name { font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; line-height: 1.45; }
+  .open { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--primary-600); }
+  /* full-screen viewer overlay */
+  #viewer { position: fixed; inset: 0; z-index: 100; background: var(--neutral-100); display: none; flex-direction: column; }
+  #viewer.on { display: flex; }
+  #vbar { height: 52px; flex: none; background: #fff; border-bottom: 1px solid var(--border-default); display: flex; align-items: center; gap: 12px; padding: 0 14px; }
+  #vbar .vt { font-size: 14px; font-weight: 700; }
+  #vbar .vd { font-size: 12px; color: var(--text-muted); }
+  #vbar button { margin-left: auto; border: 1px solid var(--border-strong); background: #fff; cursor: pointer; border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; font-weight: 600; font-family: var(--font-sans); color: var(--neutral-700); }
+  #vframe { flex: 1; border: none; width: 100%; background: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <img src="assets/venueplus-logo-mark.png" alt="VenuePlus" style="height:38px" />
+  <div>
+    <h1 class="title">VenuePlus · Dashboards</h1>
+    <p class="sub">Every screen in the design system. Click any card to view it full screen.</p>
+  </div>
+</header>
+<div class="wrap">
+  <div class="group-label">Operator</div>
+  <div class="grid" id="operator"></div>
+  <div class="group-label">Supply &amp; Marketplace</div>
+  <div class="grid" id="market"></div>
+  <div class="group-label">Reference</div>
+  <div class="grid" id="ref"></div>
+</div>
+
+<div id="viewer">
+  <div id="vbar">
+    <img src="assets/venueplus-logo-mark.png" alt="" style="height:28px" />
+    <span class="vt" id="vtitle"></span>
+    <span class="vd" id="vdesc"></span>
+    <button onclick="closeViewer()">✕ Close</button>
+  </div>
+  <iframe id="vframe" title="dashboard"></iframe>
+</div>
+<script>
+  const G1 = 'linear-gradient(135deg, var(--primary-600), var(--primary-500))';
+  const G2 = 'linear-gradient(135deg, var(--primary-500), var(--accent-500))';
+  const G3 = 'linear-gradient(135deg, var(--accent-500), var(--accent-700))';
+  const DARK = 'var(--neutral-900)';
+  const SETS = {
+    operator: [
+      ['Mission Control', 'Overview · Agents · Runs · Escalations · Settings', 'ui_kits/mission-control/index.html', G1],
+      ['Finance &amp; Payouts', 'Escrow + operator / host / provider dashboards', 'ui_kits/finance/index.html', G2],
+      ['Disputes &amp; Resolutions', 'Cancellations, shortfalls &amp; no-shows + policies', 'ui_kits/disputes/index.html', G1],
+      ['Day-One Launch', 'Empty state — bootstrap supply, providers first', 'ui_kits/operator-launch/index.html', G2],
+      ['Mobile Operator', 'On-the-go approval queue (iOS)', 'ui_kits/mobile-operator/index.html', DARK],
+      ['Notifications', 'Lock-screen pings + delivery rules', 'ui_kits/notifications/index.html', DARK],
+    ],
+    market: [
+      ['Consumer Marketplace', 'Home · Search · Venue detail + checkout', 'ui_kits/marketplace/index.html', G2],
+      ['Host &amp; Provider Onboarding', 'Guided sign-up for both supply sides', 'ui_kits/onboarding/index.html', G3],
+    ],
+    ref: [
+      ['Agent Operations Manual', 'Roles, duties &amp; autonomy for 14 agents', 'guidelines/agent-manual/index.html', G1],
+      ['Fleet Map', 'How work flows through the approval gate', 'guidelines/fleet-map/index.html', G2],
+    ],
+  };
+  for (const [key, items] of Object.entries(SETS)) {
+    document.getElementById(key).innerHTML = items.map(([name, desc, href, grad]) => `
+      <a class="card" href="${href}" onclick="return openViewer(event, '${href}', '${name.replace(/&amp;/g,'&')}', '${desc.replace(/'/g,"\\'")}')">
+        <div class="thumb" style="background:${grad}">${name.replace(/&amp;/g,'&')}</div>
+        <div class="body">
+          <div class="name">${name}</div>
+          <div class="desc">${desc}</div>
+          <div class="open">Open full screen ↗</div>
+        </div>
+      </a>`).join('');
+  }
+
+  function openViewer(ev, href, name, desc) {
+    ev.preventDefault();
+    document.getElementById('vtitle').textContent = name;
+    document.getElementById('vdesc').textContent = desc;
+    document.getElementById('vframe').src = href;
+    document.getElementById('viewer').classList.add('on');
+    return false;
+  }
+  function closeViewer() {
+    document.getElementById('viewer').classList.remove('on');
+    document.getElementById('vframe').src = 'about:blank';
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
+</script>
+</body>
+</html>

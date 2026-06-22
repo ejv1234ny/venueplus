@@ -1,0 +1,21 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Logo — V+ Mark & Wordmark" subtitle="Navy V, orange +, navy→orange swoosh. On light & dark." -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>
+ body{margin:0;padding:0;font-family:var(--font-sans);display:flex}
+ .half{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;height:200px;padding:0 16px}
+ .light{background:#fff}
+ .dark{background:var(--neutral-900)}
+ .full{height:64px}
+ .mark{height:66px}
+ .lockup{display:flex;align-items:center;gap:14px}
+ .word{font-size:30px;font-weight:700;letter-spacing:-.01em}
+ .word .v{color:var(--primary-500)} .word .p{color:var(--accent-500)}
+ .dark .word .v,.dark .word .p{color:#fff}
+</style></head><body>
+ <div class="half light">
+   <img class="full" src="../assets/venueplus-logo-full.png" alt="VenuePlus — More Venues. More Possibilities.">
+ </div>
+ <div class="half dark">
+   <div class="lockup"><img class="mark" src="../assets/venueplus-logo-mark.png" alt="V+"><span class="word"><span class="v">Venue</span><span class="p">Plus</span></span></div>
+ </div>
+</body></html>

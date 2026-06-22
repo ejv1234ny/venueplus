@@ -1,0 +1,15 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Corner Radii" subtitle="Buttons rounded-lg, cards rounded-xl, pills full." -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>
+ body{margin:0;padding:24px;font-family:var(--font-sans);background:#fff;display:flex;gap:20px;align-items:flex-end}
+ .b{display:flex;flex-direction:column;align-items:center;gap:8px}
+ .sq{width:72px;height:72px;background:var(--primary-100);border:2px solid var(--primary-500)}
+ .b span{font-size:11px;color:var(--neutral-500)}
+ .b small{font-family:monospace;font-size:10px;color:var(--neutral-400)}
+</style></head><body>
+ <div class="b"><div class="sq" style="border-radius:var(--radius-sm)"></div><span>sm · chips</span><small>6px</small></div>
+ <div class="b"><div class="sq" style="border-radius:var(--radius-md)"></div><span>md · buttons</span><small>8px</small></div>
+ <div class="b"><div class="sq" style="border-radius:var(--radius-lg)"></div><span>lg · cards</span><small>12px</small></div>
+ <div class="b"><div class="sq" style="border-radius:var(--radius-xl)"></div><span>xl · media</span><small>16px</small></div>
+ <div class="b"><div class="sq" style="border-radius:var(--radius-full)"></div><span>full · pills</span><small>9999</small></div>
+</body></html>

@@ -1,0 +1,122 @@
+/* ============================================================
+   VenuePlus — Color tokens
+   Lifted verbatim from frontend/tailwind.config.js
+   Primary  = Brand Navy   (#1b5390) — trust, reliability, safety
+   Accent   = Brand Orange (#e0561f) — celebration, versatility, warmth
+   Sampled from the VenuePlus logo (navy V, orange +, navy→orange swoosh).
+   ============================================================ */
+:root {
+  /* ---- Primary: Brand Navy ---- */
+  --primary-50:  #eaf1f8;
+  --primary-100: #d3e1f0;
+  --primary-200: #a7c3e1;
+  --primary-300: #7aa4d1;
+  --primary-400: #4477ad;
+  --primary-500: #1b5390; /* main primary — logo navy */
+  --primary-600: #154274;
+  --primary-700: #103156;
+  --primary-800: #0a2139;
+  --primary-900: #05101d;
+
+  /* ---- Accent: Brand Orange ---- */
+  --accent-50:  #fdf0ea;
+  --accent-100: #fbe0d5;
+  --accent-200: #f6c1ab;
+  --accent-300: #f0a181;
+  --accent-400: #ea7c4f;
+  --accent-500: #e0561f; /* main accent — logo orange */
+  --accent-600: #bc471a;
+  --accent-700: #8d3513;
+  --accent-800: #5e240d;
+  --accent-900: #2f1206;
+
+  /* ---- Neutral: Gray scale (Tailwind gray) ---- */
+  --neutral-50:  #f9fafb;
+  --neutral-100: #f3f4f6;
+  --neutral-200: #e5e7eb;
+  --neutral-300: #d1d5db;
+  --neutral-400: #9ca3af;
+  --neutral-500: #6b7280;
+  --neutral-600: #4b5563;
+  --neutral-700: #374151;
+  --neutral-800: #1f2937;
+  --neutral-900: #111827;
+  --white: #ffffff;
+
+  /* ---- Semantic status colors (badges, alerts) ---- */
+  --status-pending-bg:   #fef9c3; /* yellow-100 */
+  --status-pending-fg:   #a16207; /* yellow-700 */
+  --status-success-bg:   #dcfce7; /* green-100 */
+  --status-success-fg:   #15803d; /* green-700 */
+  --status-error-bg:     #fee2e2; /* red-100 */
+  --status-error-fg:     #b91c1c; /* red-700 */
+  --status-info-bg:      #dbeafe; /* blue-100 */
+  --status-info-fg:      #1d4ed8; /* blue-700 */
+
+  /* ---- Agent risk tiers (Mission Control) ----
+     Escalating severity drives how much human review an agent action needs. */
+  --risk-read-bg:           #f3f4f6; --risk-read-fg:           #374151; /* read-only, safe */
+  --risk-internal-bg:       #e0f2fe; --risk-internal-fg:       #075985; /* internal write */
+  --risk-outbound-bg:       #fef3c7; --risk-outbound-fg:       #92400e; /* sends to a human */
+  --risk-financial-bg:      #ffedd5; --risk-financial-fg:      #9a3412; /* touches money fields */
+  --risk-money-bg:          #fee2e2; --risk-money-fg:          #b91c1c; /* moves money — hard gate */
+  --risk-legal-bg:          #f3e8ff; --risk-legal-fg:          #7e22ce; /* legal — hard gate */
+
+  /* ---- Agent decision outcomes ---- */
+  --decision-auto-bg:       #dcfce7; --decision-auto-fg:       #15803d; /* auto-executed */
+  --decision-approval-bg:   #fef3c7; --decision-approval-fg:   #92400e; /* needs operator approval */
+  --decision-deny-bg:       #fee2e2; --decision-deny-fg:       #b91c1c; /* denied by policy */
+
+  /* ---- Run / job lifecycle ---- */
+  --run-done-bg:      #dcfce7; --run-done-fg:      #15803d;
+  --run-running-bg:   #e0f2fe; --run-running-fg:   #075985;
+  --run-planned-bg:   #f3f4f6; --run-planned-fg:   #4b5563;
+  --run-approval-bg:  #fef3c7; --run-approval-fg:  #92400e;
+  --run-blocked-bg:   #fee2e2; --run-blocked-fg:   #b91c1c;
+
+  /* ---- Service-category accent chips ---- */
+  --cat-cleaning-bg:    #dcfce7; --cat-cleaning-fg:    #15803d;
+  --cat-security-bg:    #fee2e2; --cat-security-fg:    #b91c1c;
+  --cat-catering-bg:    #ffedd5; --cat-catering-fg:    #c2410c;
+  --cat-bartending-bg:  #f3e8ff; --cat-bartending-fg:  #7e22ce;
+  --cat-dj-bg:          #fce7f3; --cat-dj-fg:          #be185d;
+  --cat-photography-bg: #dbeafe; --cat-photography-fg: #1d4ed8;
+  --cat-decoration-bg:  #fef9c3; --cat-decoration-fg:  #a16207;
+  --cat-equipment-bg:   #f3f4f6; --cat-equipment-fg:   #374151;
+  --cat-staff-bg:       #e0e7ff; --cat-staff-fg:       #4338ca;
+
+  /* ============ Semantic aliases ============ */
+  --brand:            var(--primary-500);
+  --brand-hover:      var(--primary-600);
+  --brand-soft:       var(--primary-50);
+  --brand-soft-fg:    var(--primary-700);
+  --cta:              var(--accent-500);
+  --cta-hover:        var(--accent-600);
+
+  --bg-app:           var(--neutral-50);
+  --surface-card:     var(--white);
+  --surface-sunken:   var(--neutral-50);
+  --surface-footer:   var(--neutral-900);
+
+  --text-strong:      var(--neutral-900);
+  --text-body:        var(--neutral-600);
+  --text-muted:       var(--neutral-500);
+  --text-subtle:      var(--neutral-400);
+  --text-on-brand:    var(--white);
+
+  --border-default:   var(--neutral-200);
+  --border-strong:    var(--neutral-300);
+  --border-hairline:  var(--neutral-100);
+
+  --focus-ring:       var(--primary-500);
+
+  /* Mission Control surfaces */
+  --surface-console:  var(--neutral-50);
+  --alert-bg:         #fffbeb; /* amber-50 — escalation banner */
+  --alert-border:     #fcd34d; /* amber-300 */
+  --alert-fg:         #78350f; /* amber-900 */
+
+  /* Signature hero gradient: navy → orange (the logo's own gradient) */
+  --gradient-hero: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-500) 50%, var(--accent-500) 100%);
+  --gradient-brand: linear-gradient(120deg, var(--primary-500) 0%, var(--accent-500) 100%);
+}
