@@ -7,6 +7,7 @@ import os
 import uvicorn
 
 from database import engine, Base
+import models_leads  # noqa: F401 — register the provider_leads table on Base
 from services.observability import init_sentry
 
 ALLOWED_ORIGINS = [

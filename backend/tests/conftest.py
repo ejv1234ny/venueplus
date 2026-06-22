@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models  # noqa: E402,F401  (register marketplace tables on Base)
 import models_agents  # noqa: E402,F401  (register agent tables on Base)
+import models_leads  # noqa: E402,F401  (register provider_leads table on Base)
 from database import Base, get_db  # noqa: E402
 from main import app  # noqa: E402
 from auth import create_access_token, get_password_hash  # noqa: E402
