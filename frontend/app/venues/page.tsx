@@ -9,6 +9,7 @@ import { VenueListSkeleton } from '@/components/Skeleton';
 import EmptyState from '@/components/EmptyState';
 import MapView, { MapBounds } from '@/components/MapView';
 import LocationSearch, { LocationResult } from '@/components/LocationSearch';
+import EventTypeSelect from '@/components/EventTypeSelect';
 
 export default function VenuesPage() {
   const searchParams = useSearchParams();
@@ -16,6 +17,7 @@ export default function VenuesPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     venue_type: searchParams.get('type') || '',
+    event_type: searchParams.get('event_type') || '',
     min_capacity: '',
     max_price: '',
   });
@@ -40,6 +42,7 @@ export default function VenuesPage() {
     try {
       const params: any = { limit: 50 };
       if (filters.venue_type) params.venue_type = filters.venue_type;
+      if (filters.event_type) params.event_type = filters.event_type;
       if (filters.min_capacity) params.min_capacity = parseInt(filters.min_capacity);
       if (filters.max_price) params.max_price = parseFloat(filters.max_price);
 
@@ -139,7 +142,7 @@ export default function VenuesPage() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ venue_type: '', min_capacity: '', max_price: '' });
+    setFilters({ venue_type: '', event_type: '', min_capacity: '', max_price: '' });
     isInitialLoad.current = true;
     setMapCenter([39.8283, -98.5795]);
     setMapZoom(4);
@@ -187,6 +190,13 @@ export default function VenuesPage() {
                 <option value="warehouse">Warehouse</option>
                 <option value="garden">Garden</option>
               </select>
+              <EventTypeSelect
+                value={filters.event_type}
+                onChange={(v) => setFilters({ ...filters, event_type: v })}
+                placeholder="Any occasion"
+                aria-label="Filter by event type"
+                className="input-field py-2 text-sm w-auto min-w-[140px]"
+              />
               <input
                 type="number"
                 placeholder="Min Guests"

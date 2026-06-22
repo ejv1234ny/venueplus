@@ -10,6 +10,8 @@ import {
   FiAlertCircle, FiShield, FiPlus, FiX, FiCalendar,
 } from 'react-icons/fi';
 import { venuesAPI, servicesAPI, bookingsAPI, eventsAPI } from '@/lib/api';
+import EventTypeSelect from '@/components/EventTypeSelect';
+import { EVENT_TYPE_LABELS } from '@/lib/eventTypes';
 import { useAuthStore } from '@/lib/store';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import StatusBadge from '@/components/StatusBadge';
@@ -41,6 +43,7 @@ export default function VenueDetailPage() {
   const [specialRequests, setSpecialRequests] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<number | ''>('');
   const [userEvents, setUserEvents] = useState<any[]>([]);
+  const [occasionType, setOccasionType] = useState('');
 
   // Optional service search
   const [showServiceSearch, setShowServiceSearch] = useState(false);
@@ -205,7 +208,22 @@ export default function VenueDetailPage() {
           notes: s.notes || undefined,
         })),
       };
-      if (selectedEventId) bookingData.event_id = Number(selectedEventId);
+      if (selectedEventId) {
+        bookingData.event_id = Number(selectedEventId);
+      } else if (occasionType) {
+        // Create a lightweight Event for the chosen occasion so it links to the
+        // booking and feeds event-type analytics. Non-fatal if it fails.
+        try {
+          const ev = await eventsAPI.create({
+            title: `${EVENT_TYPE_LABELS[occasionType] || 'Event'} at ${venue.title}`,
+            event_type: occasionType,
+            expected_guests: venue.capacity || 1,
+          });
+          bookingData.event_id = ev.data.id;
+        } catch {
+          /* proceed without a linked event */
+        }
+      }
 
       const response = await bookingsAPI.create(bookingData);
       setBookingSuccess(response.data);
@@ -351,6 +369,20 @@ export default function VenueDetailPage() {
                   {venue.amenities.map((amenity: string, i: number) => (
                     <span key={i} className="bg-neutral-100 text-neutral-700 px-3 py-1 rounded-full text-sm">
                       {amenity}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Ideal for (event types) */}
+            {venue.ideal_for && venue.ideal_for.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-neutral-900 mb-3">Ideal For</h2>
+                <div className="flex flex-wrap gap-2">
+                  {venue.ideal_for.map((ev: string) => (
+                    <span key={ev} className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-sm">
+                      {EVENT_TYPE_LABELS[ev] || ev}
                     </span>
                   ))}
                 </div>
@@ -593,6 +625,21 @@ export default function VenueDetailPage() {
                         )}
                       </div>
                     )}
+                  </div>
+
+                  {/* Occasion (event type) */}
+                  <div>
+                    <label htmlFor="occasion" className="block text-sm font-medium text-neutral-700 mb-1">
+                      Occasion <span className="font-normal text-neutral-400">(optional)</span>
+                    </label>
+                    <EventTypeSelect
+                      id="occasion"
+                      value={occasionType}
+                      onChange={setOccasionType}
+                      placeholder="What's the occasion?"
+                      aria-label="Event occasion"
+                      className="input-field text-sm"
+                    />
                   </div>
 
                   {/* Special Requests */}

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import cast, String
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -6,6 +7,7 @@ from database import get_db
 from models import User, Venue, VenueRequirement, UserRole
 from schemas import VenueCreate, VenueUpdate, VenueResponse, VenueRequirementCreate, VenueRequirementResponse
 from auth import get_current_active_user
+from services import places
 
 router = APIRouter()
 
@@ -36,6 +38,7 @@ def create_venue(
 def search_venues(
     city: Optional[str] = None,
     venue_type: Optional[str] = None,
+    event_type: Optional[str] = None,
     min_capacity: Optional[int] = None,
     max_price: Optional[float] = None,
     search: Optional[str] = None,
@@ -74,6 +77,12 @@ def search_venues(
         query = query.filter(Venue.city.ilike(f"%{city}%"))
     if venue_type:
         query = query.filter(Venue.venue_type.ilike(f"%{venue_type}%"))
+    if event_type:
+        # Match venues whose ideal_for JSON array contains this event_type slug.
+        # Portable across SQLite/Postgres: substring-match the serialized array,
+        # escaping LIKE metacharacters (slugs contain underscores).
+        esc = event_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(cast(Venue.ideal_for, String).like(f'%"{esc}"%', escape="\\"))
     if min_capacity:
         query = query.filter(Venue.capacity >= min_capacity)
     if max_price:
@@ -81,6 +90,38 @@ def search_venues(
 
     venues = query.offset(skip).limit(limit).all()
     return venues
+
+# NOTE: declared before "/{venue_id}" so the literal path isn't captured by it.
+@router.get("/photo-suggestions")
+def photo_suggestions(
+    query: str = Query(..., min_length=4, description="Address or name + address"),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Suggest property photos for an address via Google Places (venue owners).
+
+    Returns ``{"suggestions": [{"url", "attribution"}]}``. Each photo is downloaded
+    into the configured storage backend so the URL persists (the Google Photo
+    endpoint needs the server key and isn't client-safe). Responds 501 when
+    GOOGLE_MAPS_API_KEY is unset — the frontend treats that as "coming soon".
+    """
+    if current_user.role != UserRole.VENUE_OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only venue owners can fetch photos",
+        )
+    if not places.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Photo suggestions are not configured yet",
+        )
+    try:
+        suggestions = places.fetch_suggestions(query)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not fetch photos right now",
+        )
+    return {"suggestions": suggestions}
 
 @router.get("/{venue_id}", response_model=VenueResponse)
 def get_venue(venue_id: int, db: Session = Depends(get_db)):

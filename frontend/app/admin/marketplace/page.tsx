@@ -1,6 +1,7 @@
 'use client';
 import { dashboardAPI } from '@/lib/api';
 import { usePoll, StateBlock, KpiCard, BarChart, fmtMoney } from '../_components/ui';
+import { EVENT_TYPE_LABELS } from '@/lib/eventTypes';
 
 export default function AdminMarketplacePage() {
   const { data, error, loading } = usePoll(async () => {
@@ -62,12 +63,19 @@ export default function AdminMarketplacePage() {
             <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Coverage title="Providers by category" rows={d.m.supply.providers_by_category} />
               <Coverage title="Providers by city" rows={d.m.supply.providers_by_city} />
+              <Coverage title="Events by type" rows={labelizeEvents(d.m.demand.events_by_type)} />
             </section>
           </>
         )}
       </StateBlock>
     </div>
   );
+}
+
+function labelizeEvents(rows: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(rows || {})) out[EVENT_TYPE_LABELS[k] || k] = v;
+  return out;
 }
 
 function Coverage({ title, rows }: { title: string; rows: Record<string, number> }) {

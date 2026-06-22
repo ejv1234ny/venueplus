@@ -44,6 +44,8 @@ class VenueBase(BaseModel):
     price_per_hour: float
     minimum_hours: int = 1
     amenities: Optional[List[str]] = []
+    required_services: Optional[List[str]] = []
+    ideal_for: Optional[List[str]] = []
     rules: Optional[str] = None
 
 class VenueCreate(VenueBase):
@@ -59,6 +61,8 @@ class VenueUpdate(BaseModel):
     is_active: Optional[bool] = None
     images: Optional[List[str]] = None
     amenities: Optional[List[str]] = None
+    required_services: Optional[List[str]] = None
+    ideal_for: Optional[List[str]] = None
     rules: Optional[str] = None
 
 class VenueResponse(VenueBase):

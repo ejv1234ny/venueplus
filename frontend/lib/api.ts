@@ -71,6 +71,8 @@ export const venuesAPI = {
     apiClient.get(`/api/venues/${venueId}/requirements`),
   deleteRequirement: (venueId: number, requirementId: number) =>
     apiClient.delete(`/api/venues/${venueId}/requirements/${requirementId}`),
+  photoSuggestions: (query: string) =>
+    apiClient.get('/api/venues/photo-suggestions', { params: { query } }),
 };
 
 // Services API
