@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { FiX, FiPlus, FiAlertCircle, FiMapPin } from 'react-icons/fi';
-import { venuesAPI } from '@/lib/api';
+import { FiX, FiPlus, FiAlertCircle, FiMapPin, FiUpload } from 'react-icons/fi';
+import { venuesAPI, servicesAPI, uploadsAPI } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import MapView from '@/components/MapView';
+import { amenitiesForType } from '@/lib/venueOptions';
 
 function CreateVenueContent() {
   const router = useRouter();
@@ -35,6 +36,11 @@ function CreateVenueContent() {
   const [newAmenity, setNewAmenity] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [requiredServices, setRequiredServices] = useState<string[]>([]);
+  const [serviceCategories, setServiceCategories] = useState<string[]>([]);
+  const [customRules, setCustomRules] = useState<string[]>([]);
+  const [newRule, setNewRule] = useState('');
 
   // Geocoding state
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -86,6 +92,13 @@ function CreateVenueContent() {
     };
   }, [formData.address, formData.city, formData.state, formData.zip_code, geocodeAddress]);
 
+  // Load service categories for the "required services" picker
+  useEffect(() => {
+    servicesAPI.getCategories()
+      .then((res) => setServiceCategories(res.data || []))
+      .catch(() => setServiceCategories([]));
+  }, []);
+
   const handleMarkerDrag = (lat: number, lng: number) => {
     setLatitude(lat);
     setLongitude(lng);
@@ -130,11 +143,53 @@ function CreateVenueContent() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const addAmenity = () => {
-    const trimmed = newAmenity.trim();
+  const addAmenityValue = (value: string) => {
+    const trimmed = value.trim();
     if (trimmed && !amenities.includes(trimmed)) {
       setAmenities([...amenities, trimmed]);
-      setNewAmenity('');
+    }
+  };
+
+  const addAmenity = () => {
+    addAmenityValue(newAmenity);
+    setNewAmenity('');
+  };
+
+  const toggleRequiredService = (cat: string) => {
+    setRequiredServices((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const addCustomRule = () => {
+    const trimmed = newRule.trim();
+    if (trimmed && !customRules.includes(trimmed)) {
+      setCustomRules([...customRules, trimmed]);
+      setNewRule('');
+    }
+  };
+
+  const removeCustomRule = (index: number) => {
+    setCustomRules(customRules.filter((_, i) => i !== index));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError('');
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const res = await uploadsAPI.upload(file, 'venue_photo');
+        if (res.data?.url) urls.push(res.data.url);
+      }
+      if (urls.length) setImages((prev) => [...prev, ...urls]);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Image upload failed.');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -160,13 +215,24 @@ function CreateVenueContent() {
     setLoading(true);
 
     try {
+      // Compose the rules text from required services, custom rules, and notes.
+      const ruleParts: string[] = [];
+      if (requiredServices.length) {
+        ruleParts.push(`Required services (must be booked through VenuePlus): ${requiredServices.join(', ')}`);
+      }
+      for (const r of customRules) ruleParts.push(`• ${r}`);
+      if (formData.rules.trim()) ruleParts.push(formData.rules.trim());
+      const composedRules = ruleParts.join('\n');
+
       const payload: any = {
         ...formData,
+        rules: composedRules,
         capacity: parseInt(formData.capacity),
         price_per_hour: parseFloat(formData.price_per_hour),
         minimum_hours: parseInt(formData.minimum_hours),
         amenities,
         images,
+        required_services: requiredServices,
         latitude: latitude,
         longitude: longitude,
       };
@@ -316,13 +382,26 @@ function CreateVenueContent() {
           {/* Amenities */}
           <h2 className="text-lg font-semibold text-neutral-900 mb-4">Amenities</h2>
           <div className="mb-8">
+            <p className="text-sm text-neutral-500 mb-2">Popular for this space type — pick from the list or add your own.</p>
+            <select
+              value=""
+              onChange={(e) => { if (e.target.value) addAmenityValue(e.target.value); }}
+              className="input-field mb-3"
+            >
+              <option value="">Add a popular amenity…</option>
+              {amenitiesForType(formData.venue_type)
+                .filter((a) => !amenities.includes(a))
+                .map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+            </select>
             <div className="flex gap-2 mb-3">
               <input
                 value={newAmenity}
                 onChange={(e) => setNewAmenity(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAmenity(); } }}
                 className="input-field"
-                placeholder="e.g., WiFi, Parking, Sound System"
+                placeholder="Add a custom amenity…"
               />
               <button type="button" onClick={addAmenity} className="btn-outline px-3">
                 <FiPlus />
@@ -342,29 +421,92 @@ function CreateVenueContent() {
             )}
           </div>
 
-          {/* Rules */}
+          {/* House Rules */}
           <h2 className="text-lg font-semibold text-neutral-900 mb-4">House Rules</h2>
-          <div className="mb-8">
-            <textarea
-              name="rules"
-              value={formData.rules}
-              onChange={handleChange}
-              rows={3}
-              className="input-field"
-              placeholder="Any rules guests must follow..."
-            />
+          <div className="mb-8 space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-2">
+                Required services <span className="font-normal text-neutral-400">— the renter must book these through VenuePlus</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {serviceCategories.map((cat) => {
+                  const active = requiredServices.includes(cat);
+                  return (
+                    <button
+                      type="button"
+                      key={cat}
+                      onClick={() => toggleRequiredService(cat)}
+                      className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${active ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-neutral-700 border-neutral-300 hover:border-primary-400'}`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+                {serviceCategories.length === 0 && (
+                  <span className="text-sm text-neutral-400">Loading services…</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-2">
+                Property rules <span className="font-normal text-neutral-400">— e.g. &ldquo;Use the back entrance&rdquo;, &ldquo;Park across the street&rdquo;</span>
+              </label>
+              <div className="flex gap-2 mb-3">
+                <input
+                  value={newRule}
+                  onChange={(e) => setNewRule(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomRule(); } }}
+                  className="input-field"
+                  placeholder="Add a rule and press Enter"
+                />
+                <button type="button" onClick={addCustomRule} className="btn-outline px-3">
+                  <FiPlus />
+                </button>
+              </div>
+              {customRules.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {customRules.map((rule, i) => (
+                    <span key={i} className="bg-neutral-100 text-neutral-700 px-3 py-1 rounded-full text-sm flex items-center">
+                      {rule}
+                      <button type="button" onClick={() => removeCustomRule(i)} className="ml-2 text-neutral-400 hover:text-neutral-600">
+                        <FiX size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">Additional notes</label>
+              <textarea
+                name="rules"
+                value={formData.rules}
+                onChange={handleChange}
+                rows={3}
+                className="input-field"
+                placeholder="Anything else guests should know…"
+              />
+            </div>
           </div>
 
           {/* Images */}
           <h2 className="text-lg font-semibold text-neutral-900 mb-4">Images</h2>
           <div className="mb-8">
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-neutral-300 rounded-lg p-6 mb-3 cursor-pointer hover:border-primary-400 transition-colors">
+              <FiUpload className="text-neutral-400 mb-2" size={24} />
+              <span className="text-sm text-neutral-600">{uploading ? 'Uploading…' : 'Click to upload photos from your device'}</span>
+              <span className="text-xs text-neutral-400 mt-1">JPG or PNG</span>
+              <input type="file" accept="image/*" multiple onChange={handleFileUpload} disabled={uploading} className="hidden" />
+            </label>
             <div className="flex gap-2 mb-3">
               <input
                 value={newImageUrl}
                 onChange={(e) => setNewImageUrl(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addImage(); } }}
                 className="input-field"
-                placeholder="https://example.com/image.jpg"
+                placeholder="…or paste an image URL"
               />
               <button type="button" onClick={addImage} className="btn-outline px-3">
                 <FiPlus />
