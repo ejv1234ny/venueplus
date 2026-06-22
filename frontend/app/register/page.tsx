@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { authAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
@@ -94,13 +95,15 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-neutral-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center space-x-2 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-accent-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-2xl">V+</span>
-            </div>
-            <span className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent">
-              VenuePlus
-            </span>
+          <Link href="/" className="inline-flex items-center justify-center mb-6" aria-label="VenuePlus home">
+            <Image
+              src="/venueplus-logo-transparent.png"
+              alt="VenuePlus"
+              width={220}
+              height={60}
+              priority
+              className="h-12 w-auto"
+            />
           </Link>
           <h2 className="text-3xl font-bold text-neutral-900">Create your account</h2>
           <p className="mt-2 text-neutral-600">Join VenuePlus today</p>
