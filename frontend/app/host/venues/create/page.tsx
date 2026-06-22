@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { FiX, FiPlus, FiAlertCircle, FiMapPin, FiUpload } from 'react-icons/fi';
+import { FiX, FiPlus, FiAlertCircle, FiMapPin, FiUpload, FiImage } from 'react-icons/fi';
 import { venuesAPI, servicesAPI, uploadsAPI } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -41,6 +41,9 @@ function CreateVenueContent() {
   const [serviceCategories, setServiceCategories] = useState<string[]>([]);
   const [customRules, setCustomRules] = useState<string[]>([]);
   const [newRule, setNewRule] = useState('');
+  const [photoSuggestions, setPhotoSuggestions] = useState<{ url: string; attribution?: string }[]>([]);
+  const [fetchingPhotos, setFetchingPhotos] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState('');
 
   // Geocoding state
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -191,6 +194,37 @@ function CreateVenueContent() {
       setUploading(false);
       e.target.value = '';
     }
+  };
+
+  const fetchPhotoSuggestions = async () => {
+    const query = [formData.title, formData.address, formData.city, formData.state]
+      .filter(Boolean).join(', ');
+    if (query.replace(/[, ]/g, '').length < 5) {
+      setPhotoMsg('Add the venue address first, then fetch photos.');
+      return;
+    }
+    setFetchingPhotos(true);
+    setPhotoMsg('');
+    try {
+      const res = await venuesAPI.photoSuggestions(query);
+      const sugg: { url: string; attribution?: string }[] = res.data?.suggestions || [];
+      const fresh = sugg.filter((s) => !images.includes(s.url));
+      setPhotoSuggestions(fresh);
+      if (fresh.length === 0) setPhotoMsg('No photos found for this address.');
+    } catch (err: any) {
+      if (err.response?.status === 404 || err.response?.status === 501) {
+        setPhotoMsg('Auto-fetch is coming soon — for now, upload or paste a photo URL.');
+      } else {
+        setPhotoMsg(err.response?.data?.detail || 'Could not fetch photos right now.');
+      }
+    } finally {
+      setFetchingPhotos(false);
+    }
+  };
+
+  const acceptSuggestion = (url: string) => {
+    if (!images.includes(url)) setImages((prev) => [...prev, url]);
+    setPhotoSuggestions((prev) => prev.filter((s) => s.url !== url));
   };
 
   const removeAmenity = (index: number) => {
@@ -500,6 +534,36 @@ function CreateVenueContent() {
               <span className="text-xs text-neutral-400 mt-1">JPG or PNG</span>
               <input type="file" accept="image/*" multiple onChange={handleFileUpload} disabled={uploading} className="hidden" />
             </label>
+            <button
+              type="button"
+              onClick={fetchPhotoSuggestions}
+              disabled={fetchingPhotos}
+              className="btn-outline w-full mb-3 flex items-center justify-center gap-2"
+            >
+              <FiImage /> {fetchingPhotos ? 'Fetching photos…' : 'Fetch photos for this address'}
+            </button>
+            {photoMsg && <p className="text-xs text-neutral-500 mb-3">{photoMsg}</p>}
+            {photoSuggestions.length > 0 && (
+              <div className="mb-3">
+                <p className="text-sm text-neutral-600 mb-2">Tap a photo to add it to your listing:</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {photoSuggestions.map((s, i) => (
+                    <button
+                      type="button"
+                      key={i}
+                      onClick={() => acceptSuggestion(s.url)}
+                      className="relative group rounded-lg overflow-hidden border border-neutral-200 hover:border-primary-400"
+                      title={s.attribution || 'Add photo'}
+                    >
+                      <img src={s.url} alt="Suggested venue" className="w-full h-32 object-cover" />
+                      <span className="absolute inset-0 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 bg-black/30 transition-opacity">
+                        <FiPlus size={20} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 mb-3">
               <input
                 value={newImageUrl}
