@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FiDollarSign, FiMapPin, FiStar } from 'react-icons/fi';
+import { serviceCategoryLabel } from '@/lib/serviceCategories';
 
 const categoryColors: Record<string, string> = {
   cleaning: 'bg-green-100 text-green-700',
@@ -22,8 +23,8 @@ export default function ServiceCard({ service }: { service: any }) {
   return (
     <Link href={`/services/${service.id}`} className="card group p-5">
       <div className="flex items-start justify-between mb-3">
-        <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${colorClass}`}>
-          {service.service_category}
+        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${colorClass}`}>
+          {serviceCategoryLabel(service.service_category)}
         </span>
         {service.rating > 0 && (
           <div className="flex items-center text-sm text-neutral-600">

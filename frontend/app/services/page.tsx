@@ -66,20 +66,15 @@ export default function ServicesPage() {
     }
   };
 
+  // Fetch on mount and whenever the selected category changes. A single effect
+  // keyed on selectedCategory avoids the stale-closure double-fetch where an
+  // unfiltered request could overwrite the filtered category results.
   useEffect(() => {
-    fetchServices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleCategoryChange = (category: string) => {
-    setSelectedCategory(category);
-    setTimeout(() => fetchServices(true), 0);
-  };
-
-  useEffect(() => {
-    if (!loading) fetchServices(true);
+    fetchServices(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory]);
+
+  const handleCategoryChange = (category: string) => setSelectedCategory(category);
 
   return (
     <div className="py-8">
