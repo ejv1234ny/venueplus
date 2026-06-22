@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import Image from 'next/image';
+import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import { AuthProvider } from '@/components/AuthProvider';
@@ -62,6 +63,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider>
+          <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
           <Navbar />
           <PayoutOnboardingBanner />
           <main className="min-h-screen">

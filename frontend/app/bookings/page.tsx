@@ -13,6 +13,7 @@ import AuthGuard from '@/components/AuthGuard';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import StatusBadge from '@/components/StatusBadge';
 import EmptyState from '@/components/EmptyState';
+import toast from 'react-hot-toast';
 
 const statusFilters = ['all', 'awaiting_payment', 'pending', 'confirmed', 'completed', 'cancelled'];
 
@@ -60,8 +61,9 @@ function BookingsContent() {
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
       );
+      toast.success('Booking cancelled');
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to cancel booking.');
+      toast.error(err.response?.data?.detail || 'Failed to cancel booking.');
     } finally {
       setCancelLoading(null);
     }
@@ -126,6 +128,7 @@ function BookingsContent() {
                   <button
                     onClick={() => setExpandedBooking(isExpanded ? null : booking.id)}
                     className="w-full p-5 text-left flex items-center justify-between hover:bg-neutral-50 transition-colors"
+                    aria-expanded={isExpanded}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
