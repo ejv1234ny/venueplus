@@ -1,4 +1,4 @@
-Single-line text field with optional label, leading icon, and inline error state. Full-width with a teal focus ring.
+Single-line text field with optional label, leading icon, and inline error state. Full-width with a navy focus ring.
 
 ```jsx
 <Input label="City" placeholder="Austin, TX" />

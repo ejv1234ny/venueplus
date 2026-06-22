@@ -1,4 +1,4 @@
-Rounded "pill" filter tabs — the category/status filter row from the Services and Bookings pages. Active pill is teal, inactive is light gray.
+Rounded "pill" filter tabs — the category/status filter row from the Services and Bookings pages. Active pill is navy, inactive is light gray.
 
 ```jsx
 <Tabs

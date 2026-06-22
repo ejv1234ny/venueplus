@@ -1,12 +1,12 @@
 /* Marketplace — simulated venue & service data for the consumer-facing kit. */
 (function () {
   const VENUES = [
-    { id: 1, title: 'Skyline Rooftop Loft', type: 'rooftop', city: 'Austin', state: 'TX', capacity: 80, price: 120, grad: ['#007db1', '#ff6946'] },
-    { id: 2, title: 'East Side Warehouse', type: 'warehouse', city: 'Austin', state: 'TX', capacity: 250, price: 180, grad: ['#00648e', '#3397c1'] },
-    { id: 3, title: 'Wildflower Field', type: 'field', city: 'Dripping Springs', state: 'TX', capacity: 300, price: 90, grad: ['#3397c1', '#ff876b'] },
-    { id: 4, title: 'The Cathedral Hall', type: 'hall', city: 'Austin', state: 'TX', capacity: 150, price: 160, grad: ['#ff6946', '#cc5438'] },
-    { id: 5, title: 'Lakeside Pool House', type: 'pool house', city: 'Lakeway', state: 'TX', capacity: 40, price: 110, grad: ['#007db1', '#66b1d0'] },
-    { id: 6, title: 'Downtown Parking Deck', type: 'parking lot', city: 'Austin', state: 'TX', capacity: 200, price: 75, grad: ['#004b6a', '#007db1'] },
+    { id: 1, title: 'Skyline Rooftop Loft', type: 'rooftop', city: 'Austin', state: 'TX', capacity: 80, price: 120, grad: ['#1b5390', '#e0561f'] },
+    { id: 2, title: 'East Side Warehouse', type: 'warehouse', city: 'Austin', state: 'TX', capacity: 250, price: 180, grad: ['#154274', '#4477ad'] },
+    { id: 3, title: 'Wildflower Field', type: 'field', city: 'Dripping Springs', state: 'TX', capacity: 300, price: 90, grad: ['#4477ad', '#ea7c4f'] },
+    { id: 4, title: 'The Cathedral Hall', type: 'hall', city: 'Austin', state: 'TX', capacity: 150, price: 160, grad: ['#e0561f', '#bc471a'] },
+    { id: 5, title: 'Lakeside Pool House', type: 'pool house', city: 'Lakeway', state: 'TX', capacity: 40, price: 110, grad: ['#1b5390', '#7aa4d1'] },
+    { id: 6, title: 'Downtown Parking Deck', type: 'parking lot', city: 'Austin', state: 'TX', capacity: 200, price: 75, grad: ['#103156', '#1b5390'] },
   ];
 
   const VENUE_TYPES = [

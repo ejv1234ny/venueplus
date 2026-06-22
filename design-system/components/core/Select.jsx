@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * VenuePlus select / dropdown. Same shape as Input — rounded-lg, teal focus.
+ * VenuePlus select / dropdown. Same shape as Input — rounded-lg, navy focus.
  * Pass `options` as [{value,label}] or render <option> children.
  */
 export function Select({

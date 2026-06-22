@@ -9,5 +9,5 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   children?: React.ReactNode;
 }
 
-/** Dropdown select matching the Input shape — rounded-lg, teal focus, custom chevron. */
+/** Dropdown select matching the Input shape — rounded-lg, navy focus, custom chevron. */
 export function Select(props: SelectProps): React.JSX.Element;

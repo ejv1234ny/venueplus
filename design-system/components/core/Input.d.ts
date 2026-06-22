@@ -9,5 +9,5 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   error?: string;
 }
 
-/** Single-line text field with optional label, leading icon, and error state. Teal focus ring. */
+/** Single-line text field with optional label, leading icon, and error state. Navy focus ring. */
 export function Input(props: InputProps): React.JSX.Element;

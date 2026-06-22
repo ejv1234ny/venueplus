@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * VenuePlus checkbox with label. Teal when checked.
+ * VenuePlus checkbox with label. Navy when checked.
  */
 export function Checkbox({
   label,

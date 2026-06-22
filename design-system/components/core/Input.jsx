@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * VenuePlus text input with optional label, leading icon, and error state.
- * Mirrors the app's `.input-field` — full-width, rounded-lg, teal focus ring.
+ * Mirrors the app's `.input-field` — full-width, rounded-lg, navy focus ring.
  */
 export function Input({
   label,

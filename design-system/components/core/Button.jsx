@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * VenuePlus Button.
- * Variants: primary (deep teal), accent (warm coral CTA), outline, ghost.
+ * Variants: primary (deep navy), accent (warm orange CTA), outline, ghost.
  * Sizes: sm, md, lg. Optional leading/trailing icon, fullWidth, loading.
  */
 export function Button({

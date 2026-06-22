@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * VenuePlus avatar. Shows an image, or initials on the brand gradient (the
- * app's signature teal→coral circle used in the navbar user menu).
+ * app's signature navy→orange circle used in the navbar user menu).
  */
 export function Avatar({ src, name = '', size = 'md', style = {}, ...rest }) {
   const sizes = { xs: 28, sm: 36, md: 44, lg: 56, xl: 80 };

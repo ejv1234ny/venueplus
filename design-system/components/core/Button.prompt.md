@@ -1,4 +1,4 @@
-Primary action control — teal for standard actions, coral (`accent`) for the highest-intent CTA like "Book Now", outline/ghost for secondary actions.
+Primary action control — navy for standard actions, orange (`accent`) for the highest-intent CTA like "Book Now", outline/ghost for secondary actions.
 
 ```jsx
 <Button variant="primary">Search</Button>
@@ -7,4 +7,4 @@ Primary action control — teal for standard actions, coral (`accent`) for the h
 <Button variant="ghost" size="sm">Cancel</Button>
 ```
 
-Props: `variant` (primary | accent | outline | ghost), `size` (sm | md | lg), `fullWidth`, `loading`, `leadingIcon`, `trailingIcon`, plus all native button attributes. Use `accent` sparingly — one coral CTA per view.
+Props: `variant` (primary | accent | outline | ghost), `size` (sm | md | lg), `fullWidth`, `loading`, `leadingIcon`, `trailingIcon`, plus all native button attributes. Use `accent` sparingly — one orange CTA per view.

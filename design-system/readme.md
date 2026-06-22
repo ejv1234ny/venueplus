@@ -55,7 +55,7 @@ Access requires permission on the private repo; values are captured here so this
 
 **Borders.** Hairline `--neutral-100` for in-card dividers; `--neutral-200` default; `--neutral-300` on inputs; **2px** for outline buttons and focus.
 
-**Motion.** Quick and restrained: 200ms `ease` color/shadow fades on hover, 300ms image scale on card-image hover, a 2px card lift. Buttons darken one step on hover (navy 500→600, orange 500→600). No bounces, no big entrances, no infinite loops. Focus shows a teal ring.
+**Motion.** Quick and restrained: 200ms `ease` color/shadow fades on hover, 300ms image scale on card-image hover, a 2px card lift. Buttons darken one step on hover (navy 500→600, orange 500→600). No bounces, no big entrances, no infinite loops. Focus shows a navy ring.
 
 **States.** Hover = darker brand step or card lift. Press/disabled = 50% opacity, `not-allowed`. Inputs focus to a navy border + soft navy ring. Destructive/financial actions in the console use red and a confirm step.
 

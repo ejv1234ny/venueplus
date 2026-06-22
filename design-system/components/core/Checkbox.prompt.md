@@ -1,4 +1,4 @@
-Checkbox with label — fills teal with a white check when selected. Works controlled or uncontrolled.
+Checkbox with label — fills navy with a white check when selected. Works controlled or uncontrolled.
 
 ```jsx
 <Checkbox label="Require security" defaultChecked />

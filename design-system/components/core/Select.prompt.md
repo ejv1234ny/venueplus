@@ -1,4 +1,4 @@
-Dropdown select that matches the Input field shape (rounded-lg, teal focus, custom chevron).
+Dropdown select that matches the Input field shape (rounded-lg, navy focus, custom chevron).
 
 ```jsx
 <Select label="Sort" options={[

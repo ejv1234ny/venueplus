@@ -5,5 +5,5 @@ export interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputE
   label?: React.ReactNode;
 }
 
-/** Checkbox with label. Fills teal with a white check when selected. Controlled or uncontrolled. */
+/** Checkbox with label. Fills navy with a white check when selected. Controlled or uncontrolled. */
 export function Checkbox(props: CheckboxProps): React.JSX.Element;

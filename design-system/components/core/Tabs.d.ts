@@ -16,5 +16,5 @@ export interface TabsProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'o
   onChange?: (value: string) => void;
 }
 
-/** Rounded "pill" filter tabs (Services / Bookings pages). Active pill is teal. */
+/** Rounded "pill" filter tabs (Services / Bookings pages). Active pill is navy. */
 export function Tabs(props: TabsProps): React.JSX.Element;

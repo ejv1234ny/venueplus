@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * VenuePlus pill tabs — the rounded filter row used on the Services and
- * Bookings pages. Active pill is teal; inactive is neutral-100.
+ * Bookings pages. Active pill is navy; inactive is neutral-100.
  * Controlled (value+onChange) or uncontrolled (defaultValue).
  */
 export function Tabs({ items = [], value, defaultValue, onChange, style = {}, ...rest }) {
