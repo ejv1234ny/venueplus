@@ -100,10 +100,10 @@ class ServiceProviderUpdate(BaseModel):
 class ServiceProviderResponse(ServiceProviderBase):
     id: int
     user_id: int
-    availability: dict
+    availability: Optional[dict] = None
     images: Optional[List[str]] = []
-    rating: float
-    total_reviews: int
+    rating: Optional[float] = None
+    total_reviews: int = 0
     is_active: bool
     created_at: datetime
     

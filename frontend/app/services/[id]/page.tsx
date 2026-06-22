@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { FiMapPin, FiDollarSign, FiClock, FiStar, FiCalendar, FiArrowLeft } from 'react-icons/fi';
 import { servicesAPI } from '@/lib/api';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { serviceCategoryLabel } from '@/lib/serviceCategories';
 
 const categoryColors: Record<string, string> = {
   cleaning: 'bg-green-100 text-green-700',
@@ -75,8 +76,8 @@ export default function ServiceDetailPage() {
         <div className="bg-white rounded-xl shadow-sm p-8 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
-              <span className={`inline-block text-sm font-semibold px-3 py-1 rounded-full capitalize mb-3 ${colorClass}`}>
-                {service.service_category}
+              <span className={`inline-block text-sm font-semibold px-3 py-1 rounded-full mb-3 ${colorClass}`}>
+                {serviceCategoryLabel(service.service_category)}
               </span>
               <h1 className="text-3xl font-bold text-neutral-900">{service.service_name}</h1>
               {service.rating > 0 && (

@@ -36,6 +36,7 @@ export default function VenuesPage() {
   // Track if user has moved map (vs initial/location-search load)
   const isInitialLoad = useRef(true);
   const pendingBoundsRef = useRef<MapBounds | null>(null);
+  const [fitKey, setFitKey] = useState(0);
 
   const fetchVenues = useCallback(async (bounds?: MapBounds | null) => {
     setLoading(true);
@@ -56,6 +57,8 @@ export default function VenuesPage() {
 
       const response = await venuesAPI.search(params);
       setVenues(response.data);
+      // Re-frame the map on load / filter, but not on user-pan (bounds) fetches.
+      if (!bounds) setFitKey((k) => k + 1);
     } catch (err) {
       console.error('Failed to fetch venues:', err);
     } finally {
@@ -312,6 +315,7 @@ export default function VenuesPage() {
             onVenueClick={handleVenueClick}
             selectedVenueId={selectedVenueId}
             hoveredVenueId={hoveredVenueId}
+            fitKey={fitKey}
           />
 
           {/* "Search this area" button */}

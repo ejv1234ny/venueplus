@@ -35,6 +35,7 @@ interface MapViewProps {
   singleMarker?: { lat: number; lng: number };
   draggableMarker?: boolean;
   onMarkerDrag?: (lat: number, lng: number) => void;
+  fitKey?: number;   // bump to re-fit the map to current venue markers
 }
 
 // Inner map component - only loaded client-side
@@ -51,6 +52,7 @@ function MapInner({
   singleMarker,
   draggableMarker = false,
   onMarkerDrag,
+  fitKey,
 }: MapViewProps) {
   const L = require('leaflet');
   const { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } = require('react-leaflet');
@@ -125,6 +127,23 @@ function MapInner({
     return null;
   }
 
+  // Fit the map to the current result markers when fitKey changes (on load /
+  // after filtering). Keyed on fitKey so user pans (which don't bump it) aren't
+  // overridden.
+  function MapFitBounds({ points, fitKey }: { points: [number, number][]; fitKey?: number }) {
+    const map = useMap();
+    useEffect(() => {
+      if (!fitKey || points.length === 0) return;
+      if (points.length === 1) {
+        map.setView(points[0], 13);
+      } else {
+        map.fitBounds(points as any, { padding: [40, 40], maxZoom: 14 });
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fitKey]);
+    return null;
+  }
+
   // Draggable marker component
   function DraggableMarkerComponent({ position, onDrag }: { position: [number, number]; onDrag?: (lat: number, lng: number) => void }) {
     const React = require('react');
@@ -174,6 +193,7 @@ function MapInner({
         />
         {interactive && <MapEvents />}
         <MapUpdater center={center} zoom={zoom} />
+        <MapFitBounds points={mappableVenues.map((v) => [v.latitude!, v.longitude!])} fitKey={fitKey} />
 
         {/* Single marker mode (for venue detail / create) */}
         {singleMarker && !draggableMarker && (
