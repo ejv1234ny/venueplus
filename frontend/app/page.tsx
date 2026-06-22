@@ -16,12 +16,12 @@ export default function HomePage() {
   };
 
   const venueTypes = [
-    { name: 'Rooftops', icon: '🏙️', count: '150+' },
-    { name: 'Fields', icon: '🌾', count: '200+' },
-    { name: 'Pool Houses', icon: '🏊', count: '80+' },
-    { name: 'Parking Lots', icon: '🅿️', count: '120+' },
-    { name: 'Warehouses', icon: '🏭', count: '90+' },
-    { name: 'Gardens', icon: '🌳', count: '110+' },
+    { name: 'Rooftops', count: '150+', image: '/categories/rooftops.jpg' },
+    { name: 'Fields', count: '200+', image: '/categories/fields.jpg' },
+    { name: 'Pool Houses', count: '80+', image: '/categories/pool-houses.jpg' },
+    { name: 'Parking Lots', count: '120+', image: '/categories/parking-lots.jpg' },
+    { name: 'Warehouses', count: '90+', image: '/categories/warehouses.jpg' },
+    { name: 'Gardens', count: '110+', image: '/categories/gardens.jpg' },
   ];
 
   const serviceCategories = [
@@ -54,8 +54,19 @@ export default function HomePage() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-primary-600 via-primary-500 to-accent-500 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-500 to-accent-500 text-white">
+        <video
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster="/hero-poster.jpg"
+        >
+          <source src="/hero.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-900/70 via-primary-800/55 to-accent-900/60" />
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
           <div className="text-center max-w-4xl mx-auto">
             <div className="mx-auto mb-8 inline-flex items-center justify-center w-24 h-24 rounded-full bg-white shadow-2xl">
               <Image
@@ -126,11 +137,20 @@ export default function HomePage() {
               <Link
                 key={type.name}
                 href={`/venues?type=${type.name.toLowerCase()}`}
-                className="card p-6 text-center hover:scale-105 transition-transform cursor-pointer"
+                className="group relative h-44 rounded-xl overflow-hidden shadow-sm hover:shadow-lg hover:scale-105 transition-all cursor-pointer"
               >
-                <div className="text-5xl mb-3">{type.icon}</div>
-                <h3 className="font-semibold text-lg mb-1">{type.name}</h3>
-                <p className="text-sm text-neutral-500">{type.count} venues</p>
+                <Image
+                  src={type.image}
+                  alt={type.name}
+                  fill
+                  sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+                <div className="absolute bottom-0 left-0 right-0 p-4">
+                  <h3 className="font-semibold text-lg text-white drop-shadow">{type.name}</h3>
+                  <p className="text-sm text-white/80">{type.count} venues</p>
+                </div>
               </Link>
             ))}
           </div>
