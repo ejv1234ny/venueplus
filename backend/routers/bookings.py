@@ -105,6 +105,26 @@ def create_booking(data: BookingCreate,
                 notes=f"Auto-added mandatory: {req.service_category.value}",
             ))
 
+    # Structured required-services rule: the renter must include a provider in
+    # each category the venue marked required (distinct from the specific-provider
+    # venue_requirements above). Reject early, listing the missing categories.
+    required_cats = list(getattr(venue, "required_services", None) or [])
+    if required_cats:
+        chosen_ids = {s.service_provider_id for s in data.services}
+        chosen_cats = set()
+        if chosen_ids:
+            chosen_cats = {
+                cat.value for (cat,) in db.query(ServiceProvider.service_category)
+                .filter(ServiceProvider.id.in_(chosen_ids)).all()
+            }
+        missing_cats = [c for c in required_cats if c not in chosen_cats]
+        if missing_cats:
+            raise HTTPException(
+                400,
+                "This venue requires you to book these services through VenuePlus: "
+                f"{', '.join(missing_cats)}. Add a provider for each before checking out.",
+            )
+
     booking = Booking(
         renter_id=current_user.id,
         venue_id=venue.id,

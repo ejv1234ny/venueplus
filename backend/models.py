@@ -129,6 +129,7 @@ class Venue(Base):
     minimum_hours = Column(Integer, default=1)
     images = Column(JSON)  # Array of image URLs
     amenities = Column(JSON)  # Array of amenities
+    required_services = Column(JSON)  # Array of ServiceCategory strings the renter must book via the platform
     rules = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

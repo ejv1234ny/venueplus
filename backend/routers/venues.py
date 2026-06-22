@@ -6,6 +6,7 @@ from database import get_db
 from models import User, Venue, VenueRequirement, UserRole
 from schemas import VenueCreate, VenueUpdate, VenueResponse, VenueRequirementCreate, VenueRequirementResponse
 from auth import get_current_active_user
+from services import places
 
 router = APIRouter()
 
@@ -81,6 +82,38 @@ def search_venues(
 
     venues = query.offset(skip).limit(limit).all()
     return venues
+
+# NOTE: declared before "/{venue_id}" so the literal path isn't captured by it.
+@router.get("/photo-suggestions")
+def photo_suggestions(
+    query: str = Query(..., min_length=4, description="Address or name + address"),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Suggest property photos for an address via Google Places (venue owners).
+
+    Returns ``{"suggestions": [{"url", "attribution"}]}``. Each photo is downloaded
+    into the configured storage backend so the URL persists (the Google Photo
+    endpoint needs the server key and isn't client-safe). Responds 501 when
+    GOOGLE_MAPS_API_KEY is unset — the frontend treats that as "coming soon".
+    """
+    if current_user.role != UserRole.VENUE_OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only venue owners can fetch photos",
+        )
+    if not places.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Photo suggestions are not configured yet",
+        )
+    try:
+        suggestions = places.fetch_suggestions(query)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not fetch photos right now",
+        )
+    return {"suggestions": suggestions}
 
 @router.get("/{venue_id}", response_model=VenueResponse)
 def get_venue(venue_id: int, db: Session = Depends(get_db)):
