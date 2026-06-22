@@ -1,0 +1,23 @@
+name: orphan-cleanup
+
+# Sweeps object storage (R2) of uploaded photos that were never accepted into a
+# listing and are older than the backend's ORPHAN_TTL_DAYS (default 7).
+# Calls the CRON_SECRET-protected backend endpoint; the backend does the work.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'   # daily at 04:17 UTC
+  workflow_dispatch: {}     # allow manual runs
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sweep unreferenced uploads
+        run: |
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            "https://venueplus-production.up.railway.app/api/uploads/cleanup-orphans/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $code"
+          cat /tmp/resp.json; echo
+          test "$code" = "200"
