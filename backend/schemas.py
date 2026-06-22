@@ -105,6 +105,7 @@ class ServiceProviderResponse(ServiceProviderBase):
     rating: Optional[float] = None
     total_reviews: int = 0
     is_active: bool
+    is_claimed: bool = True
     created_at: datetime
     
     class Config:

@@ -145,6 +145,11 @@ def create_booking(data: BookingCreate,
         sp = db.query(ServiceProvider).filter(ServiceProvider.id == s.service_provider_id).first()
         if not sp:
             raise HTTPException(404, f"Service provider {s.service_provider_id} not found")
+        if not sp.is_claimed:
+            raise HTTPException(
+                400,
+                f"'{sp.service_name}' is an unclaimed directory listing — it can't be "
+                "booked until the business claims and onboards.")
         hours = s.hours or total_hours
         cost = hours * sp.hourly_rate
         service_cost += cost

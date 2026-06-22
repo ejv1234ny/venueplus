@@ -79,6 +79,11 @@ export default function ServiceDetailPage() {
               <span className={`inline-block text-sm font-semibold px-3 py-1 rounded-full mb-3 ${colorClass}`}>
                 {serviceCategoryLabel(service.service_category)}
               </span>
+              {service.is_claimed === false && (
+                <span className="inline-block text-xs font-semibold px-2 py-1 rounded-full mb-3 ml-2 bg-neutral-800 text-white uppercase tracking-wide">
+                  Unclaimed
+                </span>
+              )}
               <h1 className="text-3xl font-bold text-neutral-900">{service.service_name}</h1>
               {service.rating > 0 && (
                 <div className="flex items-center mt-2">
@@ -101,6 +106,18 @@ export default function ServiceDetailPage() {
             </div>
           </div>
         </div>
+
+        {service.is_claimed === false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-amber-800">
+              <strong>This is an unclaimed directory listing.</strong> Is this your business?
+              Claim it to manage your profile, set pricing, and accept bookings. It can&apos;t be booked until claimed.
+            </p>
+            <Link href={`/claim?service_provider=${service.id}`} className="btn-primary text-sm whitespace-nowrap">
+              Claim this business
+            </Link>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Left: Details */}
