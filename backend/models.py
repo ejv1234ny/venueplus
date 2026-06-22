@@ -158,6 +158,7 @@ class ServiceProvider(Base):
     rating = Column(Float, default=0.0)
     total_reviews = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    is_claimed = Column(Boolean, default=True, nullable=False)  # false = unclaimed seeded directory listing
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
