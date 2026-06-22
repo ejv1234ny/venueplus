@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import cast, String
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -37,6 +38,7 @@ def create_venue(
 def search_venues(
     city: Optional[str] = None,
     venue_type: Optional[str] = None,
+    event_type: Optional[str] = None,
     min_capacity: Optional[int] = None,
     max_price: Optional[float] = None,
     search: Optional[str] = None,
@@ -75,6 +77,12 @@ def search_venues(
         query = query.filter(Venue.city.ilike(f"%{city}%"))
     if venue_type:
         query = query.filter(Venue.venue_type.ilike(f"%{venue_type}%"))
+    if event_type:
+        # Match venues whose ideal_for JSON array contains this event_type slug.
+        # Portable across SQLite/Postgres: substring-match the serialized array,
+        # escaping LIKE metacharacters (slugs contain underscores).
+        esc = event_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(cast(Venue.ideal_for, String).like(f'%"{esc}"%', escape="\\"))
     if min_capacity:
         query = query.filter(Venue.capacity >= min_capacity)
     if max_price:

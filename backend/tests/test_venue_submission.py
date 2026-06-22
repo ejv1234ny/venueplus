@@ -70,3 +70,27 @@ def test_booking_enforces_required_services(client, session):
     r2 = client.post("/api/bookings/", headers=_headers(renter.email),
                      json={**base, "services": [{"service_provider_id": sec.id, "hours": 3}]})
     assert r2.status_code == 201, r2.text
+
+
+def test_ideal_for_persist_and_search(client, session):
+    owner = _user(session, "owner3@t.test", UserRole.VENUE_OWNER)
+
+    def mk(title, ideal):
+        r = client.post("/api/venues/", headers=_headers(owner.email), json={
+            "title": title, "description": "d", "venue_type": "rooftop", "address": "x",
+            "city": "Austin", "state": "TX", "zip_code": "78701", "capacity": 50,
+            "price_per_hour": 100.0, "minimum_hours": 1, "ideal_for": ideal, "images": []})
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    wed = mk("Wedding Hall", ["wedding", "engagement_party"])
+    mk("Reception Only", ["wedding_reception"])  # must NOT match a "wedding" search
+    assert wed["ideal_for"] == ["wedding", "engagement_party"]
+
+    def titles(r):
+        return sorted(v["title"] for v in r.json())
+
+    # exact slug match (quote-bounded): 'wedding' != 'wedding_reception'
+    assert titles(client.get("/api/venues/", params={"event_type": "wedding"})) == ["Wedding Hall"]
+    assert titles(client.get("/api/venues/", params={"event_type": "wedding_reception"})) == ["Reception Only"]
+    assert titles(client.get("/api/venues/", params={"event_type": "engagement_party"})) == ["Wedding Hall"]

@@ -9,6 +9,8 @@ import AuthGuard from '@/components/AuthGuard';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import MapView from '@/components/MapView';
 import { amenitiesForType } from '@/lib/venueOptions';
+import EventTypeSelect from '@/components/EventTypeSelect';
+import { EVENT_TYPE_LABELS } from '@/lib/eventTypes';
 
 function CreateVenueContent() {
   const router = useRouter();
@@ -38,6 +40,7 @@ function CreateVenueContent() {
   const [newImageUrl, setNewImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [requiredServices, setRequiredServices] = useState<string[]>([]);
+  const [idealFor, setIdealFor] = useState<string[]>([]);
   const [serviceCategories, setServiceCategories] = useState<string[]>([]);
   const [customRules, setCustomRules] = useState<string[]>([]);
   const [newRule, setNewRule] = useState('');
@@ -129,6 +132,7 @@ function CreateVenueContent() {
             rules: v.rules || '',
           });
           setAmenities(v.amenities || []);
+          setIdealFor(v.ideal_for || []);
           setImages(v.images || []);
           if (v.latitude != null) setLatitude(v.latitude);
           if (v.longitude != null) setLongitude(v.longitude);
@@ -267,6 +271,7 @@ function CreateVenueContent() {
         amenities,
         images,
         required_services: requiredServices,
+        ideal_for: idealFor,
         latitude: latitude,
         longitude: longitude,
       };
@@ -447,6 +452,31 @@ function CreateVenueContent() {
                   <span key={i} className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-sm flex items-center">
                     {amenity}
                     <button type="button" onClick={() => removeAmenity(i)} className="ml-2 text-primary-400 hover:text-primary-600">
+                      <FiX size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Ideal For (event types) */}
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4">Ideal For</h2>
+          <div className="mb-8">
+            <p className="text-sm text-neutral-500 mb-2">What kinds of events is this space great for? Helps renters find it in search.</p>
+            <EventTypeSelect
+              value=""
+              onChange={(v) => { if (v && !idealFor.includes(v)) setIdealFor([...idealFor, v]); }}
+              placeholder="Add an event type…"
+              aria-label="Add an ideal event type"
+              className="input-field mb-3"
+            />
+            {idealFor.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {idealFor.map((ev, i) => (
+                  <span key={ev} className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-sm flex items-center">
+                    {EVENT_TYPE_LABELS[ev] || ev}
+                    <button type="button" onClick={() => setIdealFor(idealFor.filter((_, idx) => idx !== i))} className="ml-2 text-primary-400 hover:text-primary-600">
                       <FiX size={12} />
                     </button>
                   </span>

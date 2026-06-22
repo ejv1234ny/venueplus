@@ -130,6 +130,7 @@ class Venue(Base):
     images = Column(JSON)  # Array of image URLs
     amenities = Column(JSON)  # Array of amenities
     required_services = Column(JSON)  # Array of ServiceCategory strings the renter must book via the platform
+    ideal_for = Column(JSON)  # Array of event_type slugs this venue is well suited for
     rules = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
