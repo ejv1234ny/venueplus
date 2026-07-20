@@ -5,7 +5,7 @@ interface User {
   email: string;
   first_name: string;
   last_name: string;
-  role: 'renter' | 'venue_owner' | 'service_provider' | 'admin';
+  role: 'renter' | 'venue_owner' | 'service_provider' | 'creator' | 'admin';
   phone?: string;
   profile_image?: string;
   bio?: string;

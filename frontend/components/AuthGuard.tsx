@@ -10,7 +10,7 @@ export default function AuthGuard({
   requiredRole,
 }: {
   children: React.ReactNode;
-  requiredRole?: 'renter' | 'venue_owner' | 'service_provider';
+  requiredRole?: 'renter' | 'venue_owner' | 'service_provider' | 'creator';
 }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
   const router = useRouter();

@@ -66,6 +66,11 @@ export default function Navbar() {
                     My Services
                   </Link>
                 )}
+                {user?.role === 'creator' && (
+                  <Link href="/creator/events" className={linkClass('/creator/events')} aria-current={isActive('/creator/events') ? 'page' : undefined}>
+                    My Events
+                  </Link>
+                )}
 
                 {/* User Menu */}
                 <div className="relative">
@@ -150,6 +155,11 @@ export default function Navbar() {
                   {user?.role === 'service_provider' && (
                     <Link href="/services/my" className={linkClass('/services/my')} onClick={() => setMobileMenuOpen(false)}>
                       My Services
+                    </Link>
+                  )}
+                  {user?.role === 'creator' && (
+                    <Link href="/creator/events" className={linkClass('/creator/events')} onClick={() => setMobileMenuOpen(false)}>
+                      My Events
                     </Link>
                   )}
                   <Link href="/profile" className={linkClass('/profile')} onClick={() => setMobileMenuOpen(false)}>

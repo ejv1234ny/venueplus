@@ -208,6 +208,30 @@ export const paymentsAPI = {
   myPayments: () => apiClient.get('/api/payments/my/payments'),
 };
 
+// Creator Events API ("influencer plugin" — ticketed gatherings)
+export const creatorEventsAPI = {
+  // Creator dashboard / management
+  mine: () => apiClient.get('/api/creator-events/mine'),
+  create: (data: any) => apiClient.post('/api/creator-events/', data),
+  get: (id: number) => apiClient.get(`/api/creator-events/${id}`),
+  update: (id: number, data: any) => apiClient.put(`/api/creator-events/${id}`, data),
+  setTiers: (id: number, tiers: any[]) =>
+    apiClient.post(`/api/creator-events/${id}/tiers`, tiers),
+  holdDeposit: (id: number) => apiClient.post(`/api/creator-events/${id}/deposit/hold`),
+  publish: (id: number) => apiClient.post(`/api/creator-events/${id}/publish`),
+  cancel: (id: number) => apiClient.post(`/api/creator-events/${id}/cancel`),
+  settle: (id: number) => apiClient.post(`/api/creator-events/${id}/settle`),
+  attendees: (id: number) => apiClient.get(`/api/creator-events/${id}/attendees`),
+  checkIn: (ticketId: number) =>
+    apiClient.post(`/api/creator-events/tickets/${ticketId}/check-in`),
+  // Public page + buyer
+  public: (slug: string) => apiClient.get(`/api/creator-events/public/${slug}`),
+  purchase: (slug: string, tier_id: number, quantity: number) =>
+    apiClient.post(`/api/creator-events/public/${slug}/purchase`, { tier_id, quantity }),
+  confirmTicket: (ticketId: number) =>
+    apiClient.post(`/api/creator-events/tickets/${ticketId}/confirm`),
+};
+
 // Admin API
 export const adminAPI = {
   stats: () => apiClient.get('/api/admin/stats'),
