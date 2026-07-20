@@ -73,6 +73,11 @@ export const venuesAPI = {
     apiClient.delete(`/api/venues/${venueId}/requirements/${requirementId}`),
   photoSuggestions: (query: string) =>
     apiClient.get('/api/venues/photo-suggestions', { params: { query } }),
+  claimRequest: (data: any) => apiClient.post('/api/venues/claim/request', data),
+  claimConfirm: (token: string, new_password: string) =>
+    apiClient.post('/api/venues/claim/confirm', { token, new_password }),
+  activateLeads: (city: string) =>
+    apiClient.post('/api/venues/activate-leads', null, { params: { city } }),
 };
 
 // Services API

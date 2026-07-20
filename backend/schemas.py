@@ -70,6 +70,7 @@ class VenueResponse(VenueBase):
     owner_id: int
     images: Optional[List[str]] = []
     is_active: bool
+    is_claimed: bool = True
     created_at: datetime
     
     class Config:

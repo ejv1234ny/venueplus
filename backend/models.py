@@ -133,9 +133,10 @@ class Venue(Base):
     ideal_for = Column(JSON)  # Array of event_type slugs this venue is well suited for
     rules = Column(Text)
     is_active = Column(Boolean, default=True)
+    is_claimed = Column(Boolean, default=True, nullable=False)  # false = unclaimed directory listing (scraped/imported, not bookable until claimed)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Relationships
     owner = relationship("User", back_populates="owned_venues")
     requirements = relationship("VenueRequirement", back_populates="venue", cascade="all, delete-orphan")

@@ -460,6 +460,9 @@ export default function VenueDetailPage() {
           {/* Right: Booking Panel */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-md p-6 sticky top-24">
+              {venue.is_claimed === false ? (
+                <ClaimPanel venue={venue} />
+              ) : (<>
               <h2 className="text-xl font-bold text-neutral-900 mb-1">
                 ${venue.price_per_hour} <span className="text-sm font-normal text-neutral-500">/hour</span>
               </h2>
@@ -694,10 +697,67 @@ export default function VenueDetailPage() {
                   </button>
                 </div>
               )}
+              </>)}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Claim panel shown in place of the booking box for unclaimed directory listings.
+function ClaimPanel({ venue }: { venue: any }) {
+  const [form, setForm] = useState({ first_name: '', last_name: '', real_email: '' });
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      await venuesAPI.claimRequest({ venue_id: venue.id, ...form });
+      setSent(true);
+    } catch (e: any) {
+      setErr(e.response?.data?.detail || 'Could not send the claim link.');
+    } finally { setBusy(false); }
+  };
+
+  if (sent) return (
+    <div>
+      <h2 className="text-lg font-bold mb-1">Check your email</h2>
+      <p className="text-sm text-neutral-600">
+        We sent a link to <strong>{form.real_email}</strong> to verify and claim{' '}
+        <strong>{venue.title}</strong>. It expires in 24 hours.
+      </p>
+    </div>
+  );
+
+  return (
+    <div>
+      <span className="inline-block bg-neutral-900/80 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide mb-2">
+        Unclaimed listing
+      </span>
+      <h2 className="text-lg font-bold mb-1">Is this your space?</h2>
+      <p className="text-sm text-neutral-600 mb-4">
+        This listing was added from public data and isn’t bookable yet. Claim it to set
+        your pricing, availability and photos and start taking bookings — free during beta.
+      </p>
+      {err && <p className="text-red-600 text-sm mb-2">{err}</p>}
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <input required placeholder="First name" className="input-field"
+            value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+          <input required placeholder="Last name" className="input-field"
+            value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+        </div>
+        <input required type="email" placeholder="Your email" className="input-field"
+          value={form.real_email} onChange={(e) => setForm({ ...form, real_email: e.target.value })} />
+        <button type="submit" disabled={busy} className="btn-primary w-full">
+          {busy ? 'Sending…' : 'Claim this venue'}
+        </button>
+      </form>
     </div>
   );
 }

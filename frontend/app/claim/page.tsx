@@ -1,7 +1,7 @@
 'use client';
 import { useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { providersAPI } from '@/lib/api';
+import { providersAPI, venuesAPI } from '@/lib/api';
 
 function ClaimInner() {
   const params = useSearchParams();
@@ -14,7 +14,11 @@ function ClaimInner() {
     const token = params.get('token');
     if (!token) { setErr('Missing token'); return; }
     try {
-      await providersAPI.claimConfirm(token, pw);
+      if (params.get('type') === 'venue') {
+        await venuesAPI.claimConfirm(token, pw);
+      } else {
+        await providersAPI.claimConfirm(token, pw);
+      }
       router.push('/login');
     } catch (e: any) {
       setErr(e.response?.data?.detail || 'Failed');

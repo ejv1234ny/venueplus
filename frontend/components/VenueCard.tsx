@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { FiMapPin, FiUsers, FiDollarSign } from 'react-icons/fi';
 
 export default function VenueCard({ venue }: { venue: any }) {
+  const unclaimed = venue.is_claimed === false;
   return (
     <Link href={`/venues/${venue.id}`} className="card group">
       {/* Image */}
@@ -27,6 +28,11 @@ export default function VenueCard({ venue }: { venue: any }) {
             {venue.venue_type}
           </span>
         </div>
+        {unclaimed && (
+          <span className="absolute top-3 right-3 bg-neutral-900/80 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
+            Unclaimed
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -39,15 +45,23 @@ export default function VenueCard({ venue }: { venue: any }) {
           <span>{venue.city}, {venue.state}</span>
         </div>
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-neutral-100">
-          <div className="flex items-center text-neutral-600 text-sm">
-            <FiUsers className="mr-1" size={14} />
-            <span>Up to {venue.capacity}</span>
-          </div>
-          <div className="flex items-center font-semibold text-primary-600">
-            <FiDollarSign size={16} />
-            <span>{venue.price_per_hour}</span>
-            <span className="text-neutral-400 text-sm font-normal">/hr</span>
-          </div>
+          {unclaimed ? (
+            <span className="text-xs text-neutral-500">Is this your space? Claim it →</span>
+          ) : (
+            <div className="flex items-center text-neutral-600 text-sm">
+              <FiUsers className="mr-1" size={14} />
+              <span>Up to {venue.capacity}</span>
+            </div>
+          )}
+          {unclaimed || !venue.price_per_hour ? (
+            <span className="text-sm font-medium text-neutral-500">Pricing on request</span>
+          ) : (
+            <div className="flex items-center font-semibold text-primary-600">
+              <FiDollarSign size={16} />
+              <span>{venue.price_per_hour}</span>
+              <span className="text-neutral-400 text-sm font-normal">/hr</span>
+            </div>
+          )}
         </div>
       </div>
     </Link>

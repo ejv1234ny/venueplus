@@ -78,6 +78,11 @@ def create_booking(data: BookingCreate,
     venue = db.query(Venue).filter(Venue.id == data.venue_id, Venue.is_active == True).first()
     if not venue:
         raise HTTPException(404, "Venue not found")
+    if not venue.is_claimed:
+        raise HTTPException(
+            400,
+            f"'{venue.title}' is an unclaimed directory listing — it can't be "
+            "booked until the owner claims and completes it.")
 
     if _aware(data.start_datetime) < _now():
         raise HTTPException(400, "Cannot book in the past")
