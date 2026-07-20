@@ -474,3 +474,46 @@ class AuditLog(Base):
     entity_id = Column(Integer)
     meta = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# VenueLead — sidecar for scraped/imported venue PROSPECTS (Pool A/B).
+#
+# Mirrors CreatorLead: a prospect carries the real outreach data (contact,
+# pitch angle, competitor status) the Venues agent needs, while an optional
+# linked draft Venue (inactive) makes it show as lead supply. A prospect is NOT
+# live supply — it becomes bookable only when a real owner claims the draft and
+# completes the listing.
+# ---------------------------------------------------------------------------
+class VenueLeadStatus(str, enum.Enum):
+    NEW = "new"               # scraped/imported, not yet contacted
+    CONTACTED = "contacted"   # outreach sent
+    INTERESTED = "interested" # replied / warm
+    CLAIMED = "claimed"       # owner claimed the draft venue
+    DECLINED = "declined"
+
+
+class VenueLead(Base):
+    __tablename__ = "venue_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    venue_type = Column(String)
+    city = Column(String, index=True)
+    area = Column(String)                  # neighborhood / address blurb
+    address = Column(String)
+    website = Column(String)
+    email = Column(String)
+    phone = Column(String)
+    indicative_pricing = Column(String)
+    on_competitor = Column(String)         # "yes"/"unknown"/competitor name
+    pitch_angle = Column(Text)
+    notes = Column(Text)
+
+    source = Column(String, default="import")   # import | osm | google | <site>
+    source_id = Column(String, index=True)      # stable per-source id for dedup
+    status = Column(Enum(VenueLeadStatus, native_enum=False),
+                    default=VenueLeadStatus.NEW, nullable=False)
+    outreach_sent = Column(Boolean, default=False)
+    draft_venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -49,7 +49,8 @@ def patched_reads(monkeypatch):
 # --- unit: operate() emits data-bearing actions ---------------------------- #
 def test_venues_operate_threads_candidates_and_dedupes(session, patched_reads):
     actions = VenuesAgent().operate(session, "Austin")
-    assert [a.tool for a in actions] == ["draft_venue_listing", "draft_venue_listing"]
+    # discovery now unifies into venue leads (sidecar + draft)
+    assert [a.tool for a in actions] == ["create_venue_prospect", "create_venue_prospect"]
     # each write carries the real candidate (not just {"city": ...})
     names = {a.args["candidate"]["name"] for a in actions}
     assert names == {"The Eastside Loft", "Riverside Gallery"}  # dup collapsed

@@ -214,6 +214,73 @@ def send_venue_outreach_email(args: dict, ctx: "ToolContext") -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def create_venue_prospect(args: dict, ctx: "ToolContext") -> dict:
+    """Create a VenueLead sidecar (+ linked inactive draft Venue) from a
+    candidate. Unifies scraped/discovered venues into the lead list the agent
+    roots outreach from."""
+    if ctx.dry_run:
+        return _dry("create_venue_prospect", args,
+                    "create a venue lead (sidecar + inactive draft) from a candidate")
+    try:
+        from services import prospects
+        candidate = args.get("candidate") or args
+        lead = prospects.create_venue_lead(ctx.db, args.get("city"), candidate)
+        if lead is None:
+            return {"ok": False, "skipped": "no name or already a lead", "args": args}
+        return {"ok": True, "venue_lead_id": lead.id, "draft_venue_id": lead.draft_venue_id}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def list_venue_leads(args: dict, ctx: "ToolContext") -> dict:
+    city = args.get("city")
+    if ctx.db is None:
+        return {"ok": True, "live": False, "leads": []}
+    try:
+        from models import VenueLead
+        q = ctx.db.query(VenueLead)
+        if city:
+            q = q.filter(VenueLead.city == city)
+        leads = q.limit(500).all()
+        return {"ok": True, "live": True, "city": city, "count": len(leads),
+                "leads": [{"id": l.id, "name": l.name, "status": l.status.value,
+                           "has_email": bool(l.email), "has_phone": bool(l.phone)}
+                          for l in leads]}
+    except Exception as e:
+        return {"ok": False, "leads": [], "error": f"{type(e).__name__}: {e}"}
+
+
+def send_venue_lead_outreach(args: dict, ctx: "ToolContext") -> dict:
+    """Email a venue-lead owner/agent, personalised with its pitch angle."""
+    if ctx.dry_run:
+        return _dry("send_venue_lead_outreach", args,
+                    "email a venue prospect inviting them to list (uses its pitch angle)")
+    try:
+        from models import VenueLead, VenueLeadStatus
+        from services import email as email_svc
+        lead = ctx.db.query(VenueLead).filter(VenueLead.id == args.get("lead_id")).first()
+        if not lead:
+            return {"ok": False, "skipped": "venue lead not found"}
+        if not lead.email:
+            return {"ok": False, "skipped": "no email on venue lead"}
+        subject = f"Earn on {lead.name} while it’s available — VenuePlus (free beta)"
+        pitch = f"<p>{lead.pitch_angle}</p>" if lead.pitch_angle else ""
+        html = (f"<p>Hi {lead.name} team,</p>"
+                "<p>VenuePlus books short-term events into spaces like yours — at no cost "
+                "and no exclusivity. We handle listing, booking, payment and the guest; "
+                "you just say yes. We’re in free beta (0% platform fee), so hosting income "
+                f"flows to you.</p>{pitch}"
+                "<p>Worth a 10-minute call to set up a listing?</p>")
+        res = email_svc.send(lead.email, subject, html)
+        if res.get("ok"):
+            lead.outreach_sent = True
+            lead.status = VenueLeadStatus.CONTACTED
+            ctx.db.flush()
+        return {"ok": bool(res.get("ok")), "sent_to": lead.email, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 # ---- provider writes / outbound ------------------------------------------- #
 def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
     """Persist a recruited provider as a provisional lead (inactive until the
@@ -430,6 +497,12 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "List venues we already carry in a market (dedupe)", list_existing_venues),
     Tool("draft_venue_listing", RiskLevel.INTERNAL_WRITE,
          "Create an inactive draft venue listing from a candidate", draft_venue_listing),
+    Tool("create_venue_prospect", RiskLevel.INTERNAL_WRITE,
+         "Create a venue lead (sidecar + draft) from a candidate", create_venue_prospect),
+    Tool("list_venue_leads", RiskLevel.READ,
+         "List venue leads + pipeline status", list_venue_leads),
+    Tool("send_venue_lead_outreach", RiskLevel.OUTBOUND,
+         "Email a venue prospect using its pitch angle", send_venue_lead_outreach),
     Tool("send_venue_outreach_email", RiskLevel.OUTBOUND,
          "Email a venue owner to invite a listing", send_venue_outreach_email),
     # providers (real agent)

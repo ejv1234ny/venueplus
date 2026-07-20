@@ -47,6 +47,13 @@ class CreatorLeadsImport(BaseModel):
     leads: list[CreatorLeadIn]
 
 
+class ProspectsImport(BaseModel):
+    city: str
+    venues: list[dict] = []
+    providers: list[dict] = []
+    creators: list[dict] = []
+
+
 class KillRequest(BaseModel):
     enabled: bool
 
@@ -138,6 +145,26 @@ def seed_cron(request: Request, city: str | None = None,
     return {"ok": True, "run_id": run.id, "city": target,
             "summary": run.summary,
             "readiness": readiness.market_readiness(db, target)}
+
+
+@router.post("/prospects/import")
+def import_prospects(body: ProspectsImport, admin: User = Depends(require_admin),
+                     db: Session = Depends(get_db)):
+    """Import prospect rows (from hand-gathered sheets or a source adapter) into
+    the venue/provider/creator lead lists as INACTIVE leads with contact. The
+    agents root outreach from these. Idempotent. Returns per-list stats.
+    """
+    if not body.city.strip():
+        raise HTTPException(400, "city is required")
+    from services import prospects
+    stats = prospects.import_all(db, body.city.strip(),
+                                 venues=body.venues, providers=body.providers,
+                                 creators=body.creators)
+    total = sum(s.get("created", 0) for s in stats.values())
+    _audit(db, admin.id, "agent_import_prospects", None,
+           {"city": body.city, "created": total})
+    db.commit()
+    return {"ok": True, "stats": stats}
 
 
 @router.post("/creator-leads/import")

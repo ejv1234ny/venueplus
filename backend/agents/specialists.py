@@ -43,10 +43,11 @@ class VenuesAgent(BaseAgent):
     name = "venues"
     role = "Venue Supply Agent"
     tool_names = (
-        "search_osm_venues",      # read   -- public candidate venues
-        "list_existing_venues",   # read   -- what we already list (dedupe)
-        "draft_venue_listing",    # write  -- internal draft for owner review
-        "send_venue_outreach_email",  # outbound -- invite the owner
+        "search_osm_venues",       # read   -- public candidate venues
+        "list_existing_venues",    # read   -- what we already list (dedupe)
+        "list_venue_leads",        # read   -- prospect pipeline
+        "create_venue_prospect",   # write  -- venue lead (sidecar + draft)
+        "send_venue_lead_outreach",  # outbound -- invite a prospect (uses pitch)
     )
     system_prompt = (
         "You are the Venue Supply Agent for VenuePlus, a marketplace that lets "
@@ -81,7 +82,11 @@ class VenuesAgent(BaseAgent):
             {"city": city}, rctx).get("candidates", [])
 
         actions: list[PlannedAction] = []
+
+        # 1) Discovery: turn new public candidates into venue leads (sidecar +
+        #    inactive draft), deduped against what we already carry.
         seen: set[str] = set()
+        discovered = 0
         for cand in found:
             name = (cand.get("name") or "").strip()
             key = name.lower()
@@ -89,11 +94,27 @@ class VenuesAgent(BaseAgent):
                 continue
             seen.add(key)
             actions.append(PlannedAction(
-                "draft_venue_listing", RiskLevel.INTERNAL_WRITE,
+                "create_venue_prospect", RiskLevel.INTERNAL_WRITE,
                 {"candidate": cand, "city": city},
-                f"Draft inactive listing for candidate venue '{name}'"))
-            if limit and len(actions) >= limit:
+                f"Add venue lead '{name}' (draft for owner review)"))
+            discovered += 1
+            if limit and discovered >= limit:
                 break
+
+        # 2) Outreach: work the existing prospect list — email leads that have a
+        #    contact and haven't been reached (gated for human approval).
+        from models import VenueLead, VenueLeadStatus
+        q = db.query(VenueLead).filter(
+            VenueLead.status == VenueLeadStatus.NEW,
+            VenueLead.outreach_sent.is_(False),
+            VenueLead.email.isnot(None))
+        if city:
+            q = q.filter(VenueLead.city == city)
+        for lead in q.limit(limit or 25).all():
+            actions.append(PlannedAction(
+                "send_venue_lead_outreach", RiskLevel.OUTBOUND,
+                {"lead_id": lead.id, "city": city},
+                f"Invite venue prospect '{lead.name}' to list"))
         return actions
 
     def fallback_plan(self, goal: str, city: str | None,
