@@ -164,6 +164,26 @@ class BaseAgent:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ #
+    # Operating loop (data-threaded) -- the real seeding path            #
+    # ------------------------------------------------------------------ #
+    def operate(self, db: Any, city: str | None, live: bool = True,
+                limit: int | None = None) -> list[PlannedAction] | None:
+        """Run the agent's real read→dedupe→act loop and return PlannedActions
+        that carry concrete, discovered data in their ``args`` (a real venue
+        candidate, a real provider lead, ...).
+
+        Unlike :meth:`propose_actions` — which plans *context-free* actions and
+        so seeds nothing — this gathers live reads first and threads each
+        discovered item into the write/outbound action that acts on it, so
+        auto-approved actions actually create leads and reach real contacts.
+
+        Returns ``None`` when an agent has no operate loop yet (the orchestrator
+        then falls back to :meth:`propose_actions`). Returning ``[]`` means "ran,
+        found nothing new to do" — the orchestrator honours that (no fallback).
+        """
+        return None
+
+    # ------------------------------------------------------------------ #
     # Deterministic fallback -- subclasses must implement                #
     # ------------------------------------------------------------------ #
     def fallback_plan(self, goal: str, city: str | None,

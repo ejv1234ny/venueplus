@@ -23,6 +23,8 @@ from typing import Any
 
 from agents.base import BaseAgent
 from agents.types import PlannedAction, RiskLevel
+from agents.tools import ToolContext
+from agents import tools as tool_registry
 
 
 # --------------------------------------------------------------------------- #
@@ -64,6 +66,35 @@ class VenuesAgent(BaseAgent):
         "outside world. Prefer a few strong candidates over many weak ones.\n"
         "- Keep every action's `reason` to one concrete line."
     )
+
+    def operate(self, db: Any, city: str | None, live: bool = True,
+                limit: int | None = 12) -> list[PlannedAction]:
+        """Scout real venues (live OSM when ``live``; sim samples otherwise),
+        drop ones we already carry, and emit a ``draft_venue_listing`` action
+        per genuinely-new candidate — each carrying the real candidate dict, so
+        the auto-approved write actually creates an inactive draft venue."""
+        rctx = ToolContext(db=db, live=live)
+        have = {(v.get("title") or "").strip().lower()
+                for v in tool_registry.list_existing_venues(
+                    {"city": city}, rctx).get("venues", [])}
+        found = tool_registry.search_osm_venues(
+            {"city": city}, rctx).get("candidates", [])
+
+        actions: list[PlannedAction] = []
+        seen: set[str] = set()
+        for cand in found:
+            name = (cand.get("name") or "").strip()
+            key = name.lower()
+            if not name or key in have or key in seen:
+                continue
+            seen.add(key)
+            actions.append(PlannedAction(
+                "draft_venue_listing", RiskLevel.INTERNAL_WRITE,
+                {"candidate": cand, "city": city},
+                f"Draft inactive listing for candidate venue '{name}'"))
+            if limit and len(actions) >= limit:
+                break
+        return actions
 
     def fallback_plan(self, goal: str, city: str | None,
                       context: dict[str, Any]) -> list[PlannedAction]:
@@ -121,6 +152,62 @@ class ProvidersAgent(BaseAgent):
         "weak ones.\n"
         "- Keep every action's `reason` to one concrete line."
     )
+
+    def operate(self, db: Any, city: str | None, live: bool = True,
+                limit: int | None = 15) -> list[PlannedAction]:
+        """Gather real provider candidates (OSM + Google Places when keyed),
+        prioritise the categories our coverage is missing, and emit a
+        ``create_provider_invite`` per new business (carrying the real
+        candidate) plus a gated ``send_provider_sms`` when a phone was found.
+        The invite auto-executes into a real inactive lead; the SMS escalates
+        for human approval under the default posture. When ``live`` is false
+        (dev/CI) it reads sim candidates so runs stay offline."""
+        from services import provider_leads as pl
+
+        rctx = ToolContext(db=db, live=live)
+        missing = set(tool_registry.list_existing_providers(
+            {"city": city}, rctx).get("missing_categories", []))
+
+        if live:
+            candidates, _errors = pl.gather_candidates(city or "", ["osm", "google"])
+        else:
+            candidates = tool_registry.search_providers(
+                {"city": city}, rctx).get("candidates", [])
+
+        def cat_of(c: dict) -> str | None:
+            cat = pl._category_of(c)
+            return cat.value if cat else None
+
+        # Classifiable only; missing-coverage categories first.
+        candidates = [c for c in candidates if cat_of(c)]
+        candidates.sort(key=lambda c: 0 if cat_of(c) in missing else 1)
+
+        actions: list[PlannedAction] = []
+        seen: set[str] = set()
+        invites = 0
+        for cand in candidates:
+            name = (cand.get("name") or "").strip()
+            key = name.lower()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            cv = cat_of(cand)
+            actions.append(PlannedAction(
+                "create_provider_invite", RiskLevel.INTERNAL_WRITE,
+                {"candidate": cand, "city": city},
+                f"Recruit {cv} lead '{name}'"))
+            invites += 1
+            phone = (cand.get("tags") or {}).get("phone")
+            if phone:
+                actions.append(PlannedAction(
+                    "send_provider_sms", RiskLevel.OUTBOUND,
+                    {"phone": phone, "name": name, "city": city,
+                     "message": (f"VenuePlus (free beta): list {name} so event "
+                                 "hosts near you can book. Reply STOP to opt out.")},
+                    f"Text {name} to finish onboarding"))
+            if limit and invites >= limit:
+                break
+        return actions
 
     def fallback_plan(self, goal: str, city: str | None,
                       context: dict[str, Any]) -> list[PlannedAction]:
@@ -210,11 +297,84 @@ class MarketingAgent(BaseAgent):
 
 
 # --------------------------------------------------------------------------- #
+# 4. Creator / Influencer -- managed-pipeline demand agent                     #
+# --------------------------------------------------------------------------- #
+class CreatorAgent(BaseAgent):
+    """Finds (from imported lists) and manages micro-creators/influencers,
+    recruiting them into the Creator Events ticketing product.
+
+    Social-platform discovery isn't automatable without paid APIs, so the
+    pipeline is managed: leads are imported, then this agent drafts personalized
+    outreach for new leads and, once a lead commits, auto-prepares a draft
+    Creator Event under a placeholder account the real creator can claim. The
+    outreach email is human-gated; drafting is autonomous.
+    """
+
+    name = "creator"
+    role = "Creator & Influencer Agent"
+    tool_names = (
+        "list_creator_leads",          # read
+        "draft_creator_outreach",      # write    -- personalized copy
+        "send_creator_outreach_email",  # outbound -- recruit
+        "draft_creator_event",         # write    -- ready-to-publish draft
+    )
+    system_prompt = (
+        "You are the Creator & Influencer Agent for VenuePlus. Your job is to "
+        "recruit micro-creators (roughly 1k-50k local followers) into hosting "
+        "ticketed Creator Events, which brings their audience as demand.\n\n"
+        "Operating rules:\n"
+        "- Work the imported lead pipeline; you do not scrape social platforms.\n"
+        "- For a new lead: draft one specific, personal invitation referencing "
+        "their niche and city. Never bulk spam.\n"
+        "- Once a lead commits, prepare a draft event so they can go live fast.\n"
+        "- A human approves any outbound message. Keep each action's `reason` to "
+        "one concrete line."
+    )
+
+    def operate(self, db: Any, city: str | None, live: bool = True,
+                limit: int | None = 25) -> list[PlannedAction]:
+        """Manage the creator pipeline for a market: draft (and gate-send)
+        outreach for new leads, and draft events for committed ones. Emits
+        nothing when no leads are imported yet."""
+        from services import creator_leads as cl
+        from models_creator import CreatorLeadStatus
+
+        actions: list[PlannedAction] = []
+        for lead in cl.list_leads(db, city):
+            if len(actions) >= (limit or 10**9):
+                break
+            if lead.status == CreatorLeadStatus.NEW and not lead.outreach_sent:
+                actions.append(PlannedAction(
+                    "draft_creator_outreach", RiskLevel.INTERNAL_WRITE,
+                    {"lead_id": lead.id, "city": city},
+                    f"Draft outreach for {lead.name} ({lead.niche or 'creator'})"))
+                if lead.email:
+                    actions.append(PlannedAction(
+                        "send_creator_outreach_email", RiskLevel.OUTBOUND,
+                        {"lead_id": lead.id, "city": city},
+                        f"Invite {lead.name} to host a ticketed event"))
+            elif lead.status == CreatorLeadStatus.COMMITTED and not lead.event_drafted:
+                actions.append(PlannedAction(
+                    "draft_creator_event", RiskLevel.INTERNAL_WRITE,
+                    {"lead_id": lead.id, "city": city},
+                    f"Prepare a draft event for {lead.name}"))
+        return actions
+
+    def fallback_plan(self, goal: str, city: str | None,
+                      context: dict[str, Any]) -> list[PlannedAction]:
+        return [
+            PlannedAction("list_creator_leads", RiskLevel.READ, {"city": city},
+                          f"Review the creator pipeline for {city or 'all markets'}"),
+        ]
+
+
+# --------------------------------------------------------------------------- #
 # Registry the COO dispatches through. Order encodes supply-before-demand.
 SPECIALISTS: dict[str, type[BaseAgent]] = {
     "venues": VenuesAgent,
     "providers": ProvidersAgent,
     "marketing": MarketingAgent,
+    "creator": CreatorAgent,
 }
 
 

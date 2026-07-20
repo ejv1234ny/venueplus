@@ -1,0 +1,33 @@
+name: agents-seed
+
+# Runs the VenuePlus agent fleet's seeding loop on a schedule: scout live public
+# sources and create inactive venue/provider leads + creator outreach drafts for
+# the target market. Calls the CRON_SECRET-protected backend endpoint; the
+# backend does the work (writes are real only when AGENTS_LIVE is set).
+# The target city comes from the SEED_CITY env on the backend (or override here).
+
+on:
+  schedule:
+    - cron: '23 6 * * *'   # daily at 06:23 UTC
+  workflow_dispatch:
+    inputs:
+      city:
+        description: 'City to seed (overrides SEED_CITY)'
+        required: false
+        default: ''
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the agent seeding loop
+        run: |
+          url="https://venueplus-production.up.railway.app/api/agents/seed/cron"
+          if [ -n "${{ github.event.inputs.city }}" ]; then
+            url="$url?city=$(printf '%s' '${{ github.event.inputs.city }}' | sed 's/ /%20/g')"
+          fi
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $code"
+          cat /tmp/resp.json; echo
+          test "$code" = "200"

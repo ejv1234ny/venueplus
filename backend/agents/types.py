@@ -25,6 +25,7 @@ AGENT_ROLES = {
     "venues": "Venue Supply Agent",
     "providers": "Service Provider Supply Agent",
     "marketing": "Growth & Marketing Agent",
+    "creator": "Creator & Influencer Agent",
 }
 
 

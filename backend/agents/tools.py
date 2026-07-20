@@ -325,6 +325,89 @@ def sign_partnership_agreement(args: dict, ctx: "ToolContext") -> dict:
                 "sign a co-marketing partnership (hard-gated; human-approved)")
 
 
+# ---- creator / influencer reads + writes ---------------------------------- #
+def list_creator_leads(args: dict, ctx: "ToolContext") -> dict:
+    city = args.get("city")
+    if ctx.db is None:
+        return {"ok": True, "live": False, "city": city, "leads": []}
+    try:
+        from services import creator_leads as cl
+        leads = cl.list_leads(ctx.db, city)
+        return {"ok": True, "live": True, "city": city, "count": len(leads),
+                "leads": [{"id": ld.id, "name": ld.name, "handle": ld.handle,
+                           "status": ld.status.value, "has_email": bool(ld.email),
+                           "followers": ld.followers} for ld in leads]}
+    except Exception as e:
+        return {"ok": False, "city": city, "leads": [], "error": f"{type(e).__name__}: {e}"}
+
+
+def _lead(ctx, lead_id):
+    from models_creator import CreatorLead
+    return ctx.db.query(CreatorLead).filter(CreatorLead.id == lead_id).first()
+
+
+def draft_creator_outreach(args: dict, ctx: "ToolContext") -> dict:
+    """Draft personalized recruitment copy and store it on the lead."""
+    if ctx.dry_run:
+        return _dry("draft_creator_outreach", args,
+                    "draft personalized outreach copy for a creator lead")
+    try:
+        from services import creator_leads as cl
+        lead = _lead(ctx, args.get("lead_id"))
+        if not lead:
+            return {"ok": False, "skipped": "creator lead not found"}
+        copy = cl.draft_outreach_copy(lead, lead.city or args.get("city") or "")
+        lead.notes = copy["body"]
+        ctx.db.flush()
+        return {"ok": True, "lead_id": lead.id, "subject": copy["subject"]}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def send_creator_outreach_email(args: dict, ctx: "ToolContext") -> dict:
+    if ctx.dry_run:
+        return _dry("send_creator_outreach_email", args,
+                    "email a creator lead inviting them to host a ticketed event")
+    try:
+        from services import creator_leads as cl, email as email_svc
+        from models_creator import CreatorLeadStatus
+        lead = _lead(ctx, args.get("lead_id"))
+        if not lead:
+            return {"ok": False, "skipped": "creator lead not found"}
+        if not lead.email:
+            return {"ok": False, "skipped": "no email on creator lead"}
+        copy = cl.draft_outreach_copy(lead, lead.city or "")
+        html = "<p>" + copy["body"].replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+        res = email_svc.send(lead.email, copy["subject"], html)
+        if res.get("ok"):
+            lead.outreach_sent = True
+            lead.status = CreatorLeadStatus.CONTACTED
+            ctx.db.flush()
+        return {"ok": bool(res.get("ok")), "sent_to": lead.email, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def draft_creator_event(args: dict, ctx: "ToolContext") -> dict:
+    """Auto-prepare a DRAFT Creator Event (with default tiers) for a committed
+    lead, under a placeholder creator account they can later claim."""
+    if ctx.dry_run:
+        return _dry("draft_creator_event", args,
+                    "draft a ready-to-publish Creator Event for a committed lead")
+    try:
+        from services import creator_leads as cl
+        lead = _lead(ctx, args.get("lead_id"))
+        if not lead:
+            return {"ok": False, "skipped": "creator lead not found"}
+        ev = cl.draft_event_for_lead(ctx.db, lead)
+        if ev is None:
+            return {"ok": False, "skipped": "could not draft event"}
+        return {"ok": True, "lead_id": lead.id, "draft_event_id": ev.id,
+                "slug": ev.slug, "active": False}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 @dataclass
 class Tool:
     name: str
@@ -371,6 +454,16 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "Pay a referral incentive (hard-gated)", issue_referral_payout),
     Tool("sign_partnership_agreement", RiskLevel.LEGAL,
          "Sign a partnership agreement (hard-gated)", sign_partnership_agreement),
+    # creator / influencer (real agent)
+    Tool("list_creator_leads", RiskLevel.READ,
+         "List creator/influencer leads + pipeline status", list_creator_leads),
+    Tool("draft_creator_outreach", RiskLevel.INTERNAL_WRITE,
+         "Draft personalized outreach copy for a creator lead", draft_creator_outreach),
+    Tool("send_creator_outreach_email", RiskLevel.OUTBOUND,
+         "Email a creator lead to recruit them into a ticketed event",
+         send_creator_outreach_email),
+    Tool("draft_creator_event", RiskLevel.INTERNAL_WRITE,
+         "Draft a Creator Event for a committed lead", draft_creator_event),
 ]}
 
 

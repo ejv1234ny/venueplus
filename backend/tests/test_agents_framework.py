@@ -94,8 +94,13 @@ def test_spend_cap_downgrades_to_approval():
 
 # --- tool registry / llm --------------------------------------------------- #
 def test_tool_registry_agrees_with_planner():
-    for pj in orchestrator._plan(BIG_GOAL, "Austin TX"):
-        for a in pj.actions:
+    # Every action any specialist plans (deterministic fallback path) must carry
+    # the same risk the tool registry assigns — risk is defined once, in the
+    # registry, and the planner may never disagree.
+    from agents.specialists import SPECIALISTS
+    for name in SPECIALISTS:
+        agent = orchestrator.build_agent(name)
+        for a in agent.fallback_plan(BIG_GOAL, "Austin TX", {}):
             assert tools.risk_for(a.tool) == a.risk, a.tool
 
 

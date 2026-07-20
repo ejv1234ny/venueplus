@@ -66,6 +66,14 @@ class DepositStatus(str, enum.Enum):
     FORFEITED = "forfeited"   # creator no-showed / cancelled in penalty window
 
 
+class CreatorLeadStatus(str, enum.Enum):
+    NEW = "new"               # imported, not yet contacted
+    CONTACTED = "contacted"   # outreach sent
+    COMMITTED = "committed"   # agreed to host an event
+    CONVERTED = "converted"   # signed up / event went live
+    DECLINED = "declined"     # passed
+
+
 # --------------------------------------------------------------------------
 # Tables
 # --------------------------------------------------------------------------
@@ -199,3 +207,36 @@ class EventPayout(Base):
     error_message = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     sent_at = Column(DateTime(timezone=True))
+
+
+class CreatorLead(Base):
+    """A prospective micro-creator/influencer to recruit into Creator Events.
+
+    Managed pipeline: leads are IMPORTED (CSV/ops list; discovery via social
+    APIs isn't automatable), then the Creator agent drafts outreach and, once a
+    lead commits, drafts a ready-to-publish Creator Event under a placeholder
+    creator account the real person can later claim. Not a live user until they
+    sign up. Deduped by (handle or name) + city.
+    """
+    __tablename__ = "creator_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    handle = Column(String, index=True)        # @handle on their platform
+    platform = Column(String)                  # instagram | tiktok | youtube | ...
+    niche = Column(String)                     # fitness | food | art | tech | ...
+    followers = Column(Integer, default=0)
+    email = Column(String)
+    phone = Column(String)
+    city = Column(String, index=True)
+
+    status = Column(Enum(CreatorLeadStatus, native_enum=False),
+                    default=CreatorLeadStatus.NEW, nullable=False)
+    source = Column(String, default="import")
+    notes = Column(Text)                       # drafted outreach / ops notes
+
+    outreach_sent = Column(Boolean, default=False)
+    event_drafted = Column(Boolean, default=False)
+    draft_event_id = Column(Integer, ForeignKey("creator_events.id"),
+                            nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

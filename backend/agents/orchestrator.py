@@ -39,8 +39,12 @@ from agents.types import AutonomyConfig
 
 logger = logging.getLogger("agents.orchestrator")
 
-# The COO's dispatch order: supply first, demand last.
+# The COO's dispatch order for planning runs: supply first, demand last.
 FLEET_ORDER = ("venues", "providers", "marketing")
+
+# The seeding fleet — the three agents that grow the marketplace end to end:
+# venue supply, provider supply, and creator/influencer demand. Supply first.
+SEED_FLEET = ("venues", "providers", "creator")
 
 
 def _agents_live() -> bool:
@@ -167,6 +171,44 @@ def recompute(db: Session, run: AgentRun) -> AgentRun:
 # --------------------------------------------------------------------------- #
 # Run a goal                                                                   #
 # --------------------------------------------------------------------------- #
+def _dispatch(db: Session, run: AgentRun, agent_name: str,
+              planned, config: AutonomyConfig, usage: "guardrails.UsageTracker",
+              ctx: ToolContext) -> None:
+    """Score each PlannedAction through the guardrail, execute the auto-approved
+    ones through their tool handler, persist the AgentJob/AgentAction trace, and
+    open an AgentEscalation for anything gated to a human. Shared by both the
+    planning path (:func:`run_goal`) and the seeding path (:func:`run_seed`)."""
+    job = AgentJob(run_id=run.id, agent=agent_name,
+                   status=JobStatus.RUNNING, blockers=[])
+    db.add(job)
+    db.flush()
+
+    for pa in planned:
+        decision = guardrails.evaluate(pa.risk, config, usage, pa.args)
+        executed = False
+        if decision == Decision.AUTO:
+            result = tools.execute(pa.tool, pa.args or {}, ctx)
+            executed = True
+            usage.record(pa.risk, pa.args)  # count autonomous outreach/spend
+            logger.info("executed %s/%s -> %s", agent_name, pa.tool, result)
+
+        action = AgentAction(
+            job_id=job.id, tool=pa.tool, risk=pa.risk, decision=decision,
+            executed=executed, reason=pa.reason, args=pa.args,
+        )
+        db.add(action)
+        db.flush()
+
+        if decision == Decision.REQUIRE_APPROVAL:
+            db.add(AgentEscalation(
+                run_id=run.id, job_id=job.id, action_id=action.id,
+                agent=agent_name, tool=pa.tool, risk=pa.risk,
+                args=pa.args, reason=pa.reason,
+                status=EscalationStatus.OPEN,
+            ))
+    db.flush()
+
+
 def run_goal(db: Session, goal: str, city: str | None = None,
              config: AutonomyConfig | None = None) -> AgentRun:
     """Plan and execute a goal across the fleet. Raises ``FleetDisabledError``
@@ -176,6 +218,10 @@ def run_goal(db: Session, goal: str, city: str | None = None,
     Each agent proposes its own actions (real Claude loop when a key is set,
     deterministic fallback otherwise); the orchestrator scores each through the
     guardrail and executes the auto-approved ones via their tool handler.
+
+    This is the *planning* entry point. For real supply seeding — where each
+    agent gathers live reads and threads discovered candidates into its write
+    actions so leads actually get created — use :func:`run_seed`.
     """
     if not get_fleet_state(db).enabled:
         raise FleetDisabledError("Fleet is disabled (kill switch active)")
@@ -194,36 +240,46 @@ def run_goal(db: Session, goal: str, city: str | None = None,
     for agent_name in FLEET_ORDER:
         agent = build_agent(agent_name, llm=llm)
         planned = agent.propose_actions(goal, city, context={})
+        _dispatch(db, run, agent_name, planned, config, usage, ctx)
 
-        job = AgentJob(run_id=run.id, agent=agent_name,
-                       status=JobStatus.RUNNING, blockers=[])
-        db.add(job)
-        db.flush()
+    db.commit()
+    db.refresh(run)
+    return recompute(db, run)
 
-        for pa in planned:
-            decision = guardrails.evaluate(pa.risk, config, usage, pa.args)
-            executed = False
-            if decision == Decision.AUTO:
-                result = tools.execute(pa.tool, pa.args or {}, ctx)
-                executed = True
-                usage.record(pa.risk, pa.args)  # count autonomous outreach/spend
-                logger.info("executed %s/%s -> %s", agent_name, pa.tool, result)
 
-            action = AgentAction(
-                job_id=job.id, tool=pa.tool, risk=pa.risk, decision=decision,
-                executed=executed, reason=pa.reason, args=pa.args,
-            )
-            db.add(action)
-            db.flush()
+def run_seed(db: Session, city: str, config: AutonomyConfig | None = None,
+             goal: str | None = None) -> AgentRun:
+    """Run the fleet's real *operating* loop against a market: each agent
+    gathers live reads (OSM/Places/DB), dedupes against what we already carry,
+    and threads each discovered candidate into the write/outbound action that
+    acts on it — so ``internal_write`` actions actually create inactive leads
+    (draft venues, provider leads) and outbound reaches real contacts.
 
-            if decision == Decision.REQUIRE_APPROVAL:
-                db.add(AgentEscalation(
-                    run_id=run.id, job_id=job.id, action_id=action.id,
-                    agent=agent_name, tool=pa.tool, risk=pa.risk,
-                    args=pa.args, reason=pa.reason,
-                    status=EscalationStatus.OPEN,
-                ))
-        db.flush()
+    Same guardrail + audit trail as :func:`run_goal`. Internal writes
+    auto-execute (real when ``AGENTS_LIVE``); outbound/financial escalate under
+    the default posture. Agents without an operate loop fall back to planning.
+    """
+    if not get_fleet_state(db).enabled:
+        raise FleetDisabledError("Fleet is disabled (kill switch active)")
+
+    config = config or AutonomyConfig()
+    llm = LLMProvider()
+    goal = goal or f"Seed supply in {city}"
+    # Seeding always reads from live public sources (that's the point); writes
+    # are real only when AGENTS_LIVE is set, else dry-run.
+    ctx = ToolContext(db=db, live=True, dry_run=not _agents_live())
+    usage = guardrails.UsageTracker()
+
+    run = AgentRun(goal=goal, city=city, status=RunStatus.RUNNING)
+    db.add(run)
+    db.flush()
+
+    for agent_name in SEED_FLEET:
+        agent = build_agent(agent_name, llm=llm)
+        planned = agent.operate(db, city, live=True)
+        if planned is None:               # agent has no operate loop yet
+            planned = agent.propose_actions(goal, city, context={})
+        _dispatch(db, run, agent_name, planned, config, usage, ctx)
 
     db.commit()
     db.refresh(run)
