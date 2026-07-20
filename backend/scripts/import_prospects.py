@@ -52,7 +52,7 @@ VENUE_ALIASES = {
     "notes": ["notes", "note"],
 }
 PROVIDER_ALIASES = {
-    "name": ["name", "business", "provider"],
+    "name": ["name", "business", "provider", "businessname", "company"],
     "category": ["category", "type", "service"],
     "contact": ["contact"],
     "email": ["email"],
@@ -76,17 +76,22 @@ def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-def _read_xlsx(path: str) -> list[list[str]]:
+def _read_xlsx(path: str, sheet_name: str | None = None) -> list[list[str]]:
     z = zipfile.ZipFile(path)
     ss = []
     if "xl/sharedStrings.xml" in z.namelist():
         root = ET.fromstring(z.read("xl/sharedStrings.xml"))
         for si in root.iter(_NS + "si"):
             ss.append("".join(t.text or "" for t in si.iter(_NS + "t")))
-    # first worksheet
-    sheet = sorted(n for n in z.namelist()
-                   if re.match(r"xl/worksheets/sheet\d+\.xml$", n))[0]
-    sh = ET.fromstring(z.read(sheet))
+    sheets = sorted(n for n in z.namelist()
+                    if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+    idx = 0
+    if sheet_name:
+        wb = ET.fromstring(z.read("xl/workbook.xml"))
+        names = [s.get("name") for s in wb.iter(_NS + "sheet")]
+        if sheet_name in names:
+            idx = min(names.index(sheet_name), len(sheets) - 1)
+    sh = ET.fromstring(z.read(sheets[idx]))
     rows = []
     for r in sh.iter(_NS + "row"):
         cells = []
@@ -147,8 +152,9 @@ def _split_contact(rec: dict) -> dict:
     return rec
 
 
-def read_prospects(path: str, kind: str) -> list[dict]:
-    grid = _read_xlsx(path) if path.lower().endswith(".xlsx") else _read_csv(path)
+def read_prospects(path: str, kind: str, sheet: str | None = None) -> list[dict]:
+    grid = (_read_xlsx(path, sheet) if path.lower().endswith(".xlsx")
+            else _read_csv(path))
     recs = _rows_to_dicts(grid, ALIASES[kind])
     return [_split_contact(r) for r in recs]
 
@@ -158,10 +164,11 @@ def main(argv=None):
     ap.add_argument("--kind", required=True, choices=["venue", "provider", "creator"])
     ap.add_argument("--city", required=True)
     ap.add_argument("--file", required=True, help="CSV or XLSX path")
+    ap.add_argument("--sheet", default=None, help="XLSX sheet name (default first)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
-    rows = read_prospects(args.file, args.kind)
+    rows = read_prospects(args.file, args.kind, args.sheet)
     print(f"Parsed {len(rows)} {args.kind} prospect(s) from {args.file}")
     for r in rows[:5]:
         print("  -", {k: r.get(k) for k in ("name", "email", "phone", "category", "niche") if r.get(k)})
@@ -171,18 +178,25 @@ def main(argv=None):
         return 0
 
     Base.metadata.create_all(bind=engine)
+    fn = {"venue": prospects.import_venues, "provider": prospects.import_providers,
+          "creator": prospects.import_creators}[args.kind]
+
+    # Commit in batches so progress persists (and long remote imports resume
+    # cheaply — idempotent dedup skips what's already written).
+    total = {"considered": 0, "created": 0, "skipped": 0}
+    BATCH = 50
     db = SessionLocal()
     try:
-        if args.kind == "venue":
-            stats = prospects.import_venues(db, args.city, rows)
-        elif args.kind == "provider":
-            stats = prospects.import_providers(db, args.city, rows)
-        else:
-            stats = prospects.import_creators(db, args.city, rows)
-        db.commit()
+        for i in range(0, len(rows), BATCH):
+            s = fn(db, args.city, rows[i:i + BATCH])
+            db.commit()
+            for k in total:
+                total[k] += s.get(k, 0)
+            print(f"  …committed {min(i + BATCH, len(rows))}/{len(rows)} "
+                  f"(created so far: {total['created']})")
     finally:
         db.close()
-    print(f"Imported: {stats}")
+    print(f"Imported: {total}")
     return 0
 
 

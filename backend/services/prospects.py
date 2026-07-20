@@ -91,6 +91,8 @@ def import_providers(db, city: str, rows: list[dict]) -> dict:
         stats["considered"] += 1
         name = _norm(row.get("name"))
         cat = _norm(row.get("category"))
+        if cat:
+            cat = cat.lower()
         candidate = {
             "name": name, "category": cat, "source": _norm(row.get("source")) or "import",
             "tags": {k: v for k, v in {
