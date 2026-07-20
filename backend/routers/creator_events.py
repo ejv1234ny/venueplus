@@ -45,6 +45,7 @@ from schemas_creator import (CreatorEventCreate, CreatorEventUpdate,
 from services import payments as p
 from services import creator_events as ce
 from services import email as email_svc
+from config import is_free_mode
 
 router = APIRouter()
 
@@ -294,11 +295,13 @@ def publish_event(event_id: int,
     if not tiers:
         raise HTTPException(400, "Add at least one ticket tier before publishing")
 
-    # Creator must be able to receive payouts
-    sa = db.query(StripeAccount).filter(StripeAccount.user_id == current_user.id).first()
-    if not sa or not sa.payouts_enabled:
-        raise HTTPException(400, "Connect a payout-enabled Stripe account first "
-                                 "(POST /api/payments/onboarding-link)")
+    # Creator must be able to receive payouts — except in FREE MODE, where no
+    # money moves, so no Stripe payout account is required to go live.
+    if not is_free_mode():
+        sa = db.query(StripeAccount).filter(StripeAccount.user_id == current_user.id).first()
+        if not sa or not sa.payouts_enabled:
+            raise HTTPException(400, "Connect a payout-enabled Stripe account first "
+                                     "(POST /api/payments/onboarding-link)")
 
     # Revenue-funded events with real costs need the deposit held
     booking = db.query(Booking).filter(Booking.id == ev.booking_id).first() if ev.booking_id else None

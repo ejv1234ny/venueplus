@@ -134,8 +134,9 @@ function ManageEvent() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-4">
           <h2 className="font-semibold mb-1">Publish checklist</h2>
           <p className="text-sm text-neutral-600 mb-4">
-            To go live you need a payout-enabled Stripe account, and (if this event has venue/service
-            costs) a no-show deposit on hold. Publishing makes the public page live.
+            Publishing makes your public event page live so you can share the link and sell tickets.
+            VenuePlus is free during beta — payouts and no-show deposits only apply once paid mode is on,
+            so you can publish directly. (Once monetization is enabled you’ll set up payouts first.)
           </p>
           <div className="flex flex-wrap gap-3">
             <Link href="/payouts" className="px-4 py-2 rounded-lg border hover:bg-white text-sm">
