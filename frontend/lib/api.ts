@@ -235,9 +235,10 @@ export const creatorEventsAPI = {
 // Admin API
 export const adminAPI = {
   stats: () => apiClient.get('/api/admin/stats'),
-  users: (params: any) => apiClient.get('/api/admin/users', { params }),
+  users: (params: any = {}) => apiClient.get('/api/admin/users', { params }),
   suspendUser: (id: number) => apiClient.post(`/api/admin/users/${id}/suspend`),
   reactivateUser: (id: number) => apiClient.post(`/api/admin/users/${id}/reactivate`),
+  verifyUser: (id: number) => apiClient.post(`/api/admin/users/${id}/verify`),
   bookings: (params: any) => apiClient.get('/api/admin/bookings', { params }),
   forceStatus: (id: number, status: string) =>
     apiClient.post(`/api/admin/bookings/${id}/force-status/${status}`),

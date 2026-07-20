@@ -173,6 +173,23 @@ def metrics(admin: User = Depends(require_admin), db: Session = Depends(get_db))
             "open_escalations": open_esc,
             "fleet_enabled": fleet_enabled,
         },
+        "leads": _lead_pipeline(db),
+    }
+
+
+def _lead_pipeline(db: Session) -> dict:
+    """Prospect pipeline the agents work: inactive leads + queued outreach."""
+    from models import VenueLead
+    from models_creator import CreatorLead
+    from models_agents import EscalationStatus, RiskLevel
+    return {
+        "venue_leads": db.query(VenueLead).count(),
+        "provider_leads": db.query(ServiceProvider).filter(
+            ServiceProvider.is_active.is_(False)).count(),
+        "creator_leads": db.query(CreatorLead).count(),
+        "outreach_queued": db.query(AgentEscalation).filter(
+            AgentEscalation.status == EscalationStatus.OPEN,
+            AgentEscalation.risk == RiskLevel.OUTBOUND).count(),
     }
 
 

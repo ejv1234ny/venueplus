@@ -6,6 +6,7 @@ import AdminGuard from '@/components/AdminGuard';
 
 const NAV = [
   { href: '/admin', label: 'Overview' },
+  { href: '/admin/users', label: 'Users' },
   { href: '/admin/agents', label: 'Agents' },
   { href: '/admin/runs', label: 'Runs' },
   { href: '/admin/escalations', label: 'Escalations' },

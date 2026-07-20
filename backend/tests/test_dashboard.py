@@ -86,7 +86,9 @@ def test_dashboard_requires_admin(client, renter_headers):
 def test_metrics_shape_and_values(client, admin_headers, seeded):
     m = client.get("/api/admin/dashboard/metrics", headers=admin_headers).json()
 
-    assert set(m) == {"supply", "demand", "liquidity", "agents"}
+    assert set(m) == {"supply", "demand", "liquidity", "agents", "leads"}
+    assert set(m["leads"]) == {"venue_leads", "provider_leads",
+                               "creator_leads", "outreach_queued"}
 
     assert m["supply"]["active_venues"] == 1          # venue_b is inactive
     assert m["supply"]["active_providers"] == 2       # p3 is inactive

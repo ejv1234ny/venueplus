@@ -71,6 +71,11 @@ export default function Navbar() {
                     My Events
                   </Link>
                 )}
+                {user?.role === 'admin' && (
+                  <Link href="/admin" className={linkClass('/admin')} aria-current={isActive('/admin') ? 'page' : undefined}>
+                    Admin
+                  </Link>
+                )}
 
                 {/* User Menu */}
                 <div className="relative">
@@ -160,6 +165,11 @@ export default function Navbar() {
                   {user?.role === 'creator' && (
                     <Link href="/creator/events" className={linkClass('/creator/events')} onClick={() => setMobileMenuOpen(false)}>
                       My Events
+                    </Link>
+                  )}
+                  {user?.role === 'admin' && (
+                    <Link href="/admin" className={linkClass('/admin')} onClick={() => setMobileMenuOpen(false)}>
+                      Admin
                     </Link>
                   )}
                   <Link href="/profile" className={linkClass('/profile')} onClick={() => setMobileMenuOpen(false)}>

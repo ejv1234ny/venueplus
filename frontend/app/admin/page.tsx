@@ -124,6 +124,32 @@ export default function AdminOverviewPage() {
                 </ul>
               </div>
             </section>
+
+            {/* Agent lead pipeline */}
+            {m.leads && (
+              <section className="bg-white border rounded-lg p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <h3 className="font-bold">Agent lead pipeline</h3>
+                  <div className="flex gap-2">
+                    <Link href="/admin/agents" className="text-sm text-primary-600 hover:underline">Seed / manage →</Link>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <KpiCard label="Venue leads" value={m.leads.venue_leads} />
+                  <KpiCard label="Provider leads" value={m.leads.provider_leads} />
+                  <KpiCard label="Creator leads" value={m.leads.creator_leads} />
+                  <KpiCard
+                    label="Outreach awaiting approval"
+                    value={m.leads.outreach_queued}
+                    accent={m.leads.outreach_queued > 0 ? 'text-amber-600' : 'text-green-600'}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500 mt-3">
+                  Leads are prospects the agents discovered/imported (not live supply until claimed).
+                  Approve queued outreach in <Link href="/admin/escalations" className="text-primary-600 hover:underline">Escalations</Link>.
+                </p>
+              </section>
+            )}
           </>
         )}
       </StateBlock>
