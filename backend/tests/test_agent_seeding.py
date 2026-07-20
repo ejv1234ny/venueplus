@@ -57,6 +57,27 @@ def test_venues_operate_threads_candidates_and_dedupes(session, patched_reads):
     assert all(a.risk == RiskLevel.INTERNAL_WRITE for a in actions)
 
 
+def test_operate_skips_leads_with_open_escalation(session, patched_reads):
+    from models import VenueLead
+    from models_agents import AgentEscalation, EscalationStatus
+    lead = VenueLead(name="Prospect Y", city="Austin", email="y@example.com")
+    session.add(lead)
+    session.commit()
+    # first pass queues outreach to it
+    first = VenuesAgent().operate(session, "Austin")
+    assert any(a.tool == "send_venue_lead_outreach" and a.args["lead_id"] == lead.id
+               for a in first)
+    # once an escalation is open for it, the next pass must not re-queue it
+    session.add(AgentEscalation(run_id=1, agent="venues",
+                                tool="send_venue_lead_outreach", risk=RiskLevel.OUTBOUND,
+                                args={"lead_id": lead.id}, reason="x",
+                                status=EscalationStatus.OPEN))
+    session.commit()
+    second = VenuesAgent().operate(session, "Austin")
+    assert not any(a.tool == "send_venue_lead_outreach" and a.args["lead_id"] == lead.id
+                   for a in second)
+
+
 def test_venues_operate_skips_existing(session, monkeypatch, patched_reads):
     monkeypatch.setattr(agent_tools, "list_existing_venues",
                         lambda args, ctx: {"ok": True,

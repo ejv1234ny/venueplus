@@ -27,6 +27,21 @@ from agents.tools import ToolContext
 from agents import tools as tool_registry
 
 
+def _queued_lead_ids(db, tool: str) -> set:
+    """lead_ids that already have an OPEN escalation for ``tool`` — so agents
+    don't re-queue outreach to the same lead every run while it waits for
+    human approval."""
+    from models_agents import AgentEscalation, EscalationStatus
+    ids = set()
+    for e in db.query(AgentEscalation).filter(
+            AgentEscalation.status == EscalationStatus.OPEN,
+            AgentEscalation.tool == tool).all():
+        lid = (e.args or {}).get("lead_id")
+        if lid is not None:
+            ids.add(lid)
+    return ids
+
+
 # --------------------------------------------------------------------------- #
 # 1. Venues -- the first real, Claude-driven specialist                       #
 # --------------------------------------------------------------------------- #
@@ -104,13 +119,16 @@ class VenuesAgent(BaseAgent):
         # 2) Outreach: work the existing prospect list — email leads that have a
         #    contact and haven't been reached (gated for human approval).
         from models import VenueLead, VenueLeadStatus
+        queued = _queued_lead_ids(db, "send_venue_lead_outreach")
         q = db.query(VenueLead).filter(
             VenueLead.status == VenueLeadStatus.NEW,
             VenueLead.outreach_sent.is_(False),
             VenueLead.email.isnot(None))
         if city:
             q = q.filter(VenueLead.city == city)
-        for lead in q.limit(limit or 25).all():
+        for lead in q.limit((limit or 25) + len(queued)).all():
+            if lead.id in queued:
+                continue
             actions.append(PlannedAction(
                 "send_venue_lead_outreach", RiskLevel.OUTBOUND,
                 {"lead_id": lead.id, "city": city},
@@ -228,10 +246,11 @@ class ProvidersAgent(BaseAgent):
         from models import ServiceProvider, ProviderOutreach
         from services import provider_leads as pl
         contacted = {r.provider_id for r in db.query(ProviderOutreach).all()}
+        queued = _queued_lead_ids(db, "send_provider_lead_outreach")
         sent = 0
         for p in (db.query(ServiceProvider)
                   .filter(ServiceProvider.is_active.is_(False)).limit(1000).all()):
-            if p.id in contacted:
+            if p.id in contacted or p.id in queued:
                 continue
             areas = p.service_area_cities or []
             if city and not any(str(city).lower() in str(a).lower() for a in areas):
@@ -377,6 +396,7 @@ class CreatorAgent(BaseAgent):
         from services import creator_leads as cl
         from models_creator import CreatorLeadStatus
 
+        queued = _queued_lead_ids(db, "send_creator_outreach_email")
         actions: list[PlannedAction] = []
         for lead in cl.list_leads(db, city):
             if len(actions) >= (limit or 10**9):
@@ -386,7 +406,7 @@ class CreatorAgent(BaseAgent):
                     "draft_creator_outreach", RiskLevel.INTERNAL_WRITE,
                     {"lead_id": lead.id, "city": city},
                     f"Draft outreach for {lead.name} ({lead.niche or 'creator'})"))
-                if lead.email:
+                if lead.email and lead.id not in queued:
                     actions.append(PlannedAction(
                         "send_creator_outreach_email", RiskLevel.OUTBOUND,
                         {"lead_id": lead.id, "city": city},
