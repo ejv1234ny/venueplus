@@ -10,12 +10,17 @@ import urllib.request
 from typing import Optional
 
 EMAIL_FROM = os.getenv("EMAIL_FROM", "VenuePlus <no-reply@venueplus.local>")
+# Where replies go. Sending is from a no-reply address, so without this any
+# reply to an outreach/claim email is lost. Set to a monitored inbox.
+EMAIL_REPLY_TO = os.getenv("EMAIL_REPLY_TO")
 
 
 def _send_console(to: str, subject: str, html: str, text: Optional[str] = None) -> dict:
     print("=" * 60)
     print(f"[email:console] TO: {to}")
     print(f"[email:console] FROM: {EMAIL_FROM}")
+    if EMAIL_REPLY_TO:
+        print(f"[email:console] REPLY-TO: {EMAIL_REPLY_TO}")
     print(f"[email:console] SUBJECT: {subject}")
     print(f"[email:console] BODY:\n{text or html}")
     print("=" * 60)
@@ -27,6 +32,8 @@ def _send_resend(to: str, subject: str, html: str, text: Optional[str] = None) -
     body = {"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html}
     if text:
         body["text"] = text
+    if EMAIL_REPLY_TO:
+        body["reply_to"] = EMAIL_REPLY_TO   # replies land in a real inbox
     req = urllib.request.Request(
         "https://api.resend.com/emails",
         data=json.dumps(body).encode("utf-8"),
