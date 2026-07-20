@@ -39,6 +39,74 @@ interface MapViewProps {
   fitKey?: number;   // bump to re-fit the map to current venue markers
 }
 
+// ---------------------------------------------------------------------------
+// Helper components — defined at MODULE scope (NOT inside MapInner). If these
+// live inside MapInner they get a new identity every render, so React remounts
+// them and re-runs their effects (setView / fitBounds / invalidateSize); those
+// fire Leaflet 'moveend' -> onBoundsChange -> setState -> re-render -> remount,
+// an infinite loop that makes the map/markers blink wildly. Module scope = stable
+// identity = effects run once (plus on real dependency changes).
+// ---------------------------------------------------------------------------
+function MapEvents({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => void }) {
+  const { useMapEvents } = require('react-leaflet');
+  useMapEvents({
+    moveend: (e: any) => {
+      if (!onBoundsChange) return;
+      const b = e.target.getBounds();
+      onBoundsChange({
+        sw_lat: b.getSouthWest().lat,
+        sw_lng: b.getSouthWest().lng,
+        ne_lat: b.getNorthEast().lat,
+        ne_lng: b.getNorthEast().lng,
+      });
+    },
+  });
+  return null;
+}
+
+function MapUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const { useMap } = require('react-leaflet');
+  const map = useMap();
+  useEffect(() => {
+    // Only move if the view actually differs, so a redundant setView can't
+    // fire a spurious moveend.
+    const c = map.getCenter();
+    if (Math.abs(c.lat - center[0]) > 1e-6 || Math.abs(c.lng - center[1]) > 1e-6
+        || map.getZoom() !== zoom) {
+      map.setView(center, zoom);
+    }
+  }, [center, zoom, map]);
+  return null;
+}
+
+function MapFitBounds({ points, fitKey }: { points: [number, number][]; fitKey?: number }) {
+  const { useMap } = require('react-leaflet');
+  const map = useMap();
+  useEffect(() => {
+    if (!fitKey || points.length === 0) return;
+    if (points.length === 1) {
+      map.setView(points[0], 13);
+    } else {
+      map.fitBounds(points as any, { padding: [40, 40], maxZoom: 14 });
+    }
+    // Re-fit only when fitKey changes (on load / filter), never on user pans.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey]);
+  return null;
+}
+
+function MapResize() {
+  const { useMap } = require('react-leaflet');
+  const map = useMap();
+  useEffect(() => {
+    const fix = () => map.invalidateSize();
+    const t = setTimeout(fix, 200);
+    window.addEventListener('resize', fix);
+    return () => { clearTimeout(t); window.removeEventListener('resize', fix); };
+  }, [map]);
+  return null;
+}
+
 // Inner map component - only loaded client-side
 function MapInner({
   venues,
@@ -56,7 +124,7 @@ function MapInner({
   fitKey,
 }: MapViewProps) {
   const L = require('leaflet');
-  const { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } = require('react-leaflet');
+  const { MapContainer, TileLayer, Marker, Popup } = require('react-leaflet');
 
   // Fix Leaflet default marker icons
   useEffect(() => {
@@ -68,7 +136,6 @@ function MapInner({
     });
   }, [L]);
 
-  // Custom icons
   const defaultIcon = useMemo(() => new L.Icon({
     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -100,70 +167,10 @@ function MapInner({
     popupAnchor: [0, -16],
   }), [L]);
 
-  // Component to handle map events (bounds change)
-  function MapEvents() {
-    useMapEvents({
-      moveend: (e: any) => {
-        if (onBoundsChange) {
-          const map = e.target;
-          const bounds = map.getBounds();
-          onBoundsChange({
-            sw_lat: bounds.getSouthWest().lat,
-            sw_lng: bounds.getSouthWest().lng,
-            ne_lat: bounds.getNorthEast().lat,
-            ne_lng: bounds.getNorthEast().lng,
-          });
-        }
-      },
-    });
-    return null;
-  }
-
-  // Recompute the map size after mount / on resize. In a flex column the
-  // container often gets its final height AFTER Leaflet initialises, which
-  // otherwise leaves tiles half-rendered and getBounds() wrong.
-  function MapResize() {
-    const map = useMap();
-    useEffect(() => {
-      const fix = () => map.invalidateSize();
-      const t = setTimeout(fix, 100);
-      window.addEventListener('resize', fix);
-      return () => { clearTimeout(t); window.removeEventListener('resize', fix); };
-    }, [map]);
-    return null;
-  }
-
-  // Component to update map center/zoom when props change
-  function MapUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
-    const map = useMap();
-    useEffect(() => {
-      map.setView(center, zoom);
-    }, [center, zoom, map]);
-    return null;
-  }
-
-  // Fit the map to the current result markers when fitKey changes (on load /
-  // after filtering). Keyed on fitKey so user pans (which don't bump it) aren't
-  // overridden.
-  function MapFitBounds({ points, fitKey }: { points: [number, number][]; fitKey?: number }) {
-    const map = useMap();
-    useEffect(() => {
-      if (!fitKey || points.length === 0) return;
-      if (points.length === 1) {
-        map.setView(points[0], 13);
-      } else {
-        map.fitBounds(points as any, { padding: [40, 40], maxZoom: 14 });
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fitKey]);
-    return null;
-  }
-
-  // Draggable marker component
+  // Draggable marker (create/detail only — not in the multi-venue loop path)
   function DraggableMarkerComponent({ position, onDrag }: { position: [number, number]; onDrag?: (lat: number, lng: number) => void }) {
     const React = require('react');
     const markerRef = React.useRef(null) as any;
-
     const eventHandlers = useMemo(() => ({
       dragend() {
         const marker = markerRef.current;
@@ -173,23 +180,14 @@ function MapInner({
         }
       },
     }), [onDrag]);
-
     return (
-      <Marker
-        draggable={true}
-        eventHandlers={eventHandlers}
-        position={position}
-        ref={markerRef}
-        icon={activeIcon}
-      >
+      <Marker draggable eventHandlers={eventHandlers} position={position} ref={markerRef} icon={activeIcon}>
         <Popup>Drag to adjust location</Popup>
       </Marker>
     );
   }
 
-  const mappableVenues = venues.filter(
-    (v) => v.latitude != null && v.longitude != null
-  );
+  const mappableVenues = venues.filter((v) => v.latitude != null && v.longitude != null);
 
   return (
     <div style={{ height, width: '100%' }}>
@@ -210,23 +208,19 @@ function MapInner({
           subdomains="abcd"
           maxZoom={20}
         />
-        {interactive && <MapEvents />}
         <MapResize />
+        {interactive && <MapEvents onBoundsChange={onBoundsChange} />}
         <MapUpdater center={center} zoom={zoom} />
         <MapFitBounds points={mappableVenues.map((v) => [v.latitude!, v.longitude!])} fitKey={fitKey} />
 
-        {/* Single marker mode (for venue detail / create) */}
+        {/* Single marker mode (venue detail / create) */}
         {singleMarker && !draggableMarker && (
           <Marker position={[singleMarker.lat, singleMarker.lng]} icon={activeIcon}>
             <Popup>Venue Location</Popup>
           </Marker>
         )}
-
         {singleMarker && draggableMarker && (
-          <DraggableMarkerComponent
-            position={[singleMarker.lat, singleMarker.lng]}
-            onDrag={onMarkerDrag}
-          />
+          <DraggableMarkerComponent position={[singleMarker.lat, singleMarker.lng]} onDrag={onMarkerDrag} />
         )}
 
         {/* Multi-venue markers */}
@@ -237,21 +231,15 @@ function MapInner({
               key={venue.id}
               position={[venue.latitude!, venue.longitude!]}
               icon={isActive ? activeIcon : defaultIcon}
-              eventHandlers={{
-                click: () => onVenueClick?.(venue.id),
-              }}
+              eventHandlers={{ click: () => onVenueClick?.(venue.id) }}
             >
               <Popup>
                 <div style={{ minWidth: 150 }}>
                   <strong style={{ fontSize: 14 }}>{venue.title}</strong>
                   <br />
-                  <span style={{ color: '#666', fontSize: 12 }}>
-                    {venue.city}, {venue.state}
-                  </span>
+                  <span style={{ color: '#666', fontSize: 12 }}>{venue.city}, {venue.state}</span>
                   <br />
-                  <span style={{ color: '#007db1', fontWeight: 'bold', fontSize: 14 }}>
-                    ${venue.price_per_hour}/hr
-                  </span>
+                  <span style={{ color: '#007db1', fontWeight: 'bold', fontSize: 14 }}>${venue.price_per_hour}/hr</span>
                 </div>
               </Popup>
             </Marker>
