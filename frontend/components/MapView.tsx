@@ -202,9 +202,13 @@ function MapInner({
         zoomControl={interactive}
         doubleClickZoom={interactive}
       >
+        {/* CARTO Voyager basemap — production-friendly (OSM's own tile servers
+            rate-limit/block app traffic). Free for reasonable use, no key. */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
         />
         {interactive && <MapEvents />}
         <MapResize />
