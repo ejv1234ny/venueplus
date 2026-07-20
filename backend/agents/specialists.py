@@ -62,7 +62,8 @@ class VenuesAgent(BaseAgent):
         "list_existing_venues",    # read   -- what we already list (dedupe)
         "list_venue_leads",        # read   -- prospect pipeline
         "create_venue_prospect",   # write  -- venue lead (sidecar + draft)
-        "send_venue_lead_outreach",  # outbound -- invite a prospect (uses pitch)
+        "send_venue_lead_outreach",  # outbound -- invite a prospect by email
+        "send_venue_lead_sms",       # outbound -- invite a phone-only prospect
     )
     system_prompt = (
         "You are the Venue Supply Agent for VenuePlus, a marketplace that lets "
@@ -119,20 +120,33 @@ class VenuesAgent(BaseAgent):
         # 2) Outreach: work the existing prospect list — email leads that have a
         #    contact and haven't been reached (gated for human approval).
         from models import VenueLead, VenueLeadStatus
-        queued = _queued_lead_ids(db, "send_venue_lead_outreach")
+        from sqlalchemy import or_
+        queued = (_queued_lead_ids(db, "send_venue_lead_outreach")
+                  | _queued_lead_ids(db, "send_venue_lead_sms"))
         q = db.query(VenueLead).filter(
             VenueLead.status == VenueLeadStatus.NEW,
             VenueLead.outreach_sent.is_(False),
-            VenueLead.email.isnot(None))
+            or_(VenueLead.email.isnot(None), VenueLead.phone.isnot(None)))
         if city:
             q = q.filter(VenueLead.city == city)
-        for lead in q.limit((limit or 25) + len(queued)).all():
+        cap = 50
+        n = 0
+        for lead in q.limit(cap + len(queued)).all():
             if lead.id in queued:
                 continue
-            actions.append(PlannedAction(
-                "send_venue_lead_outreach", RiskLevel.OUTBOUND,
-                {"lead_id": lead.id, "city": city},
-                f"Invite venue prospect '{lead.name}' to list"))
+            if lead.email:   # prefer email; else text
+                actions.append(PlannedAction(
+                    "send_venue_lead_outreach", RiskLevel.OUTBOUND,
+                    {"lead_id": lead.id, "city": city},
+                    f"Email venue prospect '{lead.name}' to list"))
+            else:
+                actions.append(PlannedAction(
+                    "send_venue_lead_sms", RiskLevel.OUTBOUND,
+                    {"lead_id": lead.id, "city": city},
+                    f"Text venue prospect '{lead.name}' to list"))
+            n += 1
+            if n >= cap:
+                break
         return actions
 
     def fallback_plan(self, goal: str, city: str | None,

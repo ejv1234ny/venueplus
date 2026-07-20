@@ -250,6 +250,33 @@ def list_venue_leads(args: dict, ctx: "ToolContext") -> dict:
         return {"ok": False, "leads": [], "error": f"{type(e).__name__}: {e}"}
 
 
+def send_venue_lead_sms(args: dict, ctx: "ToolContext") -> dict:
+    """Text a venue-lead's phone to invite them to list (for leads with a phone
+    but no email). Records the outreach on the lead."""
+    if ctx.dry_run:
+        return _dry("send_venue_lead_sms", args,
+                    "text a venue prospect inviting them to list")
+    try:
+        from models import VenueLead, VenueLeadStatus
+        from services import sms
+        lead = ctx.db.query(VenueLead).filter(VenueLead.id == args.get("lead_id")).first()
+        if not lead:
+            return {"ok": False, "skipped": "venue lead not found"}
+        if not lead.phone:
+            return {"ok": False, "skipped": "no phone on venue lead"}
+        body = (f"VenuePlus (free beta): earn on {lead.name} while it's available — "
+                "we book short-term events into your space, no cost/exclusivity. "
+                "Reply YES to list, STOP to opt out.")
+        res = sms.send(lead.phone, body)
+        if res.get("ok"):
+            lead.outreach_sent = True
+            lead.status = VenueLeadStatus.CONTACTED
+            ctx.db.flush()
+        return {"ok": bool(res.get("ok")), "sent_to": lead.phone, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def send_venue_lead_outreach(args: dict, ctx: "ToolContext") -> dict:
     """Email a venue-lead owner/agent, personalised with its pitch angle."""
     if ctx.dry_run:
@@ -534,6 +561,8 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "List venue leads + pipeline status", list_venue_leads),
     Tool("send_venue_lead_outreach", RiskLevel.OUTBOUND,
          "Email a venue prospect using its pitch angle", send_venue_lead_outreach),
+    Tool("send_venue_lead_sms", RiskLevel.OUTBOUND,
+         "Text a venue prospect (phone-only leads) to invite a listing", send_venue_lead_sms),
     Tool("send_venue_outreach_email", RiskLevel.OUTBOUND,
          "Email a venue owner to invite a listing", send_venue_outreach_email),
     # providers (real agent)
