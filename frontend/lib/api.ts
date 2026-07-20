@@ -256,6 +256,13 @@ export const adminAPI = {
 export const agentsAPI = {
   runGoal: (goal: string, city?: string) =>
     apiClient.post('/api/agents/goals', { goal, city: city || null }),
+  seed: (city: string) => apiClient.post('/api/agents/seed', { city }),
+  readiness: (city: string) =>
+    apiClient.get('/api/agents/readiness', { params: { city } }),
+  creatorLeads: (city?: string) =>
+    apiClient.get('/api/agents/creator-leads', { params: city ? { city } : {} }),
+  importCreatorLeads: (city: string, leads: any[]) =>
+    apiClient.post('/api/agents/creator-leads/import', { city, leads }),
   runs: () => apiClient.get('/api/agents/runs'),
   run: (id: number) => apiClient.get(`/api/agents/runs/${id}`),
   escalations: () => apiClient.get('/api/agents/escalations'),
