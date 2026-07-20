@@ -1,5 +1,6 @@
 'use client';
 
+import 'leaflet/dist/leaflet.css';   // MUST load or tiles render as scattered squares
 import { useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 
@@ -118,6 +119,20 @@ function MapInner({
     return null;
   }
 
+  // Recompute the map size after mount / on resize. In a flex column the
+  // container often gets its final height AFTER Leaflet initialises, which
+  // otherwise leaves tiles half-rendered and getBounds() wrong.
+  function MapResize() {
+    const map = useMap();
+    useEffect(() => {
+      const fix = () => map.invalidateSize();
+      const t = setTimeout(fix, 100);
+      window.addEventListener('resize', fix);
+      return () => { clearTimeout(t); window.removeEventListener('resize', fix); };
+    }, [map]);
+    return null;
+  }
+
   // Component to update map center/zoom when props change
   function MapUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
     const map = useMap();
@@ -192,6 +207,7 @@ function MapInner({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {interactive && <MapEvents />}
+        <MapResize />
         <MapUpdater center={center} zoom={zoom} />
         <MapFitBounds points={mappableVenues.map((v) => [v.latitude!, v.longitude!])} fitKey={fitKey} />
 

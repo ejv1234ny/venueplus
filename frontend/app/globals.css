@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-@import 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+/* Leaflet CSS is imported locally in components/MapView.tsx (a remote @import
+   here is dropped by the browser because it follows the @tailwind rules). */
 
 @layer base {
   body {
