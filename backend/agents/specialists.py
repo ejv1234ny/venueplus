@@ -149,10 +149,10 @@ class ProvidersAgent(BaseAgent):
     name = "providers"
     role = "Service Provider Supply Agent"
     tool_names = (
-        "search_providers",          # read   -- public candidate businesses
-        "list_existing_providers",   # read   -- what we have + coverage gaps
-        "create_provider_invite",    # write  -- internal invite record
-        "send_provider_sms",         # outbound -- nudge to finish onboarding
+        "search_providers",              # read   -- public candidate businesses
+        "list_existing_providers",       # read   -- what we have + coverage gaps
+        "create_provider_invite",        # write  -- internal lead record
+        "send_provider_lead_outreach",   # outbound -- recruit an existing lead
     )
     system_prompt = (
         "You are the Service Provider Supply Agent for VenuePlus, a marketplace "
@@ -204,6 +204,8 @@ class ProvidersAgent(BaseAgent):
         candidates.sort(key=lambda c: 0 if cat_of(c) in missing else 1)
 
         actions: list[PlannedAction] = []
+
+        # 1) Discovery: turn new public candidates into inactive provider leads.
         seen: set[str] = set()
         invites = 0
         for cand in candidates:
@@ -212,21 +214,36 @@ class ProvidersAgent(BaseAgent):
             if not name or key in seen:
                 continue
             seen.add(key)
-            cv = cat_of(cand)
             actions.append(PlannedAction(
                 "create_provider_invite", RiskLevel.INTERNAL_WRITE,
                 {"candidate": cand, "city": city},
-                f"Recruit {cv} lead '{name}'"))
+                f"Recruit {cat_of(cand)} lead '{name}'"))
             invites += 1
-            phone = (cand.get("tags") or {}).get("phone")
-            if phone:
-                actions.append(PlannedAction(
-                    "send_provider_sms", RiskLevel.OUTBOUND,
-                    {"phone": phone, "name": name, "city": city,
-                     "message": (f"VenuePlus (free beta): list {name} so event "
-                                 "hosts near you can book. Reply STOP to opt out.")},
-                    f"Text {name} to finish onboarding"))
             if limit and invites >= limit:
+                break
+
+        # 2) Outreach: work the existing lead list — text inactive provider
+        #    leads that serve this city, have a phone, and haven't been reached
+        #    (gated for human approval; ProviderOutreach prevents re-texting).
+        from models import ServiceProvider, ProviderOutreach
+        from services import provider_leads as pl
+        contacted = {r.provider_id for r in db.query(ProviderOutreach).all()}
+        sent = 0
+        for p in (db.query(ServiceProvider)
+                  .filter(ServiceProvider.is_active.is_(False)).limit(1000).all()):
+            if p.id in contacted:
+                continue
+            areas = p.service_area_cities or []
+            if city and not any(str(city).lower() in str(a).lower() for a in areas):
+                continue
+            if not pl.lead_phone(db, p):
+                continue
+            actions.append(PlannedAction(
+                "send_provider_lead_outreach", RiskLevel.OUTBOUND,
+                {"lead_id": p.id, "city": city},
+                f"Text provider lead '{p.service_name}' to join"))
+            sent += 1
+            if sent >= (limit or 15):
                 break
         return actions
 

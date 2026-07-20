@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 
@@ -76,6 +77,20 @@ TARGET_CATEGORIES = ["catering", "photography", "dj", "bartending",
 
 def slug(s: str) -> str:
     return "".join(c.lower() if c.isalnum() else "-" for c in s).strip("-")
+
+
+_PHONE_RE = re.compile(r"(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}")
+
+
+def lead_phone(db, provider) -> str | None:
+    """Best-effort phone for a provider lead: the lead user's ``phone`` if set
+    (newer leads store it there), else parsed from the description (older leads
+    carried it inside the ``Source: {...}`` blob)."""
+    user = db.query(User).filter(User.id == provider.user_id).first()
+    if user and user.phone:
+        return user.phone
+    m = _PHONE_RE.search(provider.description or "")
+    return m.group(0) if m else None
 
 
 def classify(tags: dict) -> ServiceCategory | None:
@@ -249,9 +264,10 @@ def create_lead(db, city: str, candidate: dict,
         return None
 
     pw = password_hash or get_password_hash(os.urandom(8).hex())
+    phone = (candidate.get("tags", {}) or {}).get("phone")
     user = User(email=email, hashed_password=pw, first_name="Lead",
                 last_name=name[:60], role=UserRole.SERVICE_PROVIDER,
-                is_active=False, is_verified=False)
+                phone=phone, is_active=False, is_verified=False)
     db.add(user)
     db.flush()
 

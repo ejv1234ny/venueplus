@@ -66,24 +66,46 @@ def test_venues_operate_skips_existing(session, monkeypatch, patched_reads):
     assert names == {"Riverside Gallery"}
 
 
-def test_providers_operate_invites_and_gates_outreach(session, patched_reads):
+def test_providers_operate_invites_new_candidates(session, patched_reads):
     actions = ProvidersAgent().operate(session, "Austin")
     invites = [a for a in actions if a.tool == "create_provider_invite"]
-    sms = [a for a in actions if a.tool == "send_provider_sms"]
     # both classifiable candidates become invites; the unclassifiable one is dropped
     assert {a.args["candidate"]["name"] for a in invites} == {
         "Austin Event Catering", "Lens & Light Photo"}
-    # only the candidate with a phone gets an outreach action, and it's OUTBOUND
-    assert len(sms) == 1
-    assert sms[0].risk == RiskLevel.OUTBOUND
-    assert sms[0].args["phone"] == "+15125550001"
     # missing-coverage category (catering) is prioritised first
     assert invites[0].args["candidate"]["name"] == "Austin Event Catering"
+    # no existing leads in the DB yet -> nothing to outreach this pass
+    assert not [a for a in actions if a.tool == "send_provider_lead_outreach"]
+
+
+def test_providers_operate_outreaches_existing_leads(session, patched_reads):
+    from services import provider_leads as pl
+    from models import ProviderOutreach
+    lead = pl.create_lead(session, "Austin", {
+        "name": "Copper Shaker", "category": "bartending",
+        "tags": {"phone": "(512) 555-0199"}})
+    session.commit()
+    actions = ProvidersAgent().operate(session, "Austin")
+    outreach = [a for a in actions if a.tool == "send_provider_lead_outreach"]
+    assert any(a.args["lead_id"] == lead.id for a in outreach)
+    assert all(a.risk == RiskLevel.OUTBOUND for a in outreach)
+    # once recorded as contacted, it's not texted again
+    session.add(ProviderOutreach(provider_id=lead.id))
+    session.commit()
+    again = ProvidersAgent().operate(session, "Austin")
+    assert not any(a.args["lead_id"] == lead.id
+                   for a in again if a.tool == "send_provider_lead_outreach")
 
 
 # --- integration: a live seed run creates real inactive lead rows ---------- #
 def test_run_seed_live_seeds_real_leads(session, monkeypatch, patched_reads):
     monkeypatch.setenv("AGENTS_LIVE", "true")   # writes perform real side effects
+    # a pre-existing venue prospect with contact -> the venues agent should queue
+    # (and gate) outreach to it this run
+    from models import VenueLead
+    session.add(VenueLead(name="Prospect X", city="Austin", email="x@example.com"))
+    session.commit()
+
     run = orchestrator.run_seed(session, "Austin")
 
     venues = session.query(Venue).all()
@@ -93,5 +115,5 @@ def test_run_seed_live_seeds_real_leads(session, monkeypatch, patched_reads):
     assert all(v.is_active is False for v in venues)
     assert {p.service_name for p in providers} == {"Austin Event Catering", "Lens & Light Photo"}
     assert all(p.is_active is False for p in providers)
-    # outbound SMS did NOT auto-send under the default posture — it escalated
+    # outbound outreach did NOT auto-send under the default posture — it escalated
     assert run.summary["needs_approval"] >= 1

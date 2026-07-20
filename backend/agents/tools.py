@@ -300,6 +300,37 @@ def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def send_provider_lead_outreach(args: dict, ctx: "ToolContext") -> dict:
+    """Text an existing INACTIVE provider lead to recruit it, and record the
+    outreach (ProviderOutreach) so it isn't contacted twice."""
+    if ctx.dry_run:
+        return _dry("send_provider_lead_outreach", args,
+                    "text an existing provider lead to join VenuePlus")
+    try:
+        from models import ServiceProvider, ProviderOutreach
+        from services import provider_leads as pl
+        from services import sms
+        prov = ctx.db.query(ServiceProvider).filter(
+            ServiceProvider.id == args.get("lead_id")).first()
+        if not prov:
+            return {"ok": False, "skipped": "provider lead not found"}
+        to = pl.lead_phone(ctx.db, prov)
+        if not to:
+            return {"ok": False, "skipped": "no phone on provider lead"}
+        body = (f"VenuePlus (free beta): list {prov.service_name} so event hosts "
+                "near you can book. Reply STOP to opt out.")
+        res = sms.send(to, body)
+        if res.get("ok"):
+            existing = ctx.db.query(ProviderOutreach).filter(
+                ProviderOutreach.provider_id == prov.id).first()
+            if not existing:
+                ctx.db.add(ProviderOutreach(provider_id=prov.id, channel="sms"))
+            ctx.db.flush()
+        return {"ok": bool(res.get("ok")), "sent_to": to, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def send_provider_sms(args: dict, ctx: "ToolContext") -> dict:
     if ctx.dry_run:
         return _dry("send_provider_sms", args, "text a provider to finish onboarding")
@@ -512,6 +543,8 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "List providers we already have + coverage gaps by category", list_existing_providers),
     Tool("create_provider_invite", RiskLevel.INTERNAL_WRITE,
          "Create a provisional provider lead from a candidate", create_provider_invite),
+    Tool("send_provider_lead_outreach", RiskLevel.OUTBOUND,
+         "Text an existing provider lead to recruit it", send_provider_lead_outreach),
     Tool("send_provider_sms", RiskLevel.OUTBOUND,
          "Text a provider to finish onboarding", send_provider_sms),
     # marketing (real agent)

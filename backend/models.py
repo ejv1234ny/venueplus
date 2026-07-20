@@ -517,3 +517,20 @@ class VenueLead(Base):
     outreach_sent = Column(Boolean, default=False)
     draft_venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# ProviderOutreach — sidecar tracking which inactive provider LEADS the
+# Providers agent has already reached out to. A separate table (not a column on
+# service_providers) so it auto-creates via create_all with no ALTER on the
+# live table and no risk to existing provider queries. Mirrors the
+# outreach_sent flags on VenueLead / CreatorLead.
+# ---------------------------------------------------------------------------
+class ProviderOutreach(Base):
+    __tablename__ = "provider_outreach"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("service_providers.id"),
+                         unique=True, index=True, nullable=False)
+    channel = Column(String, default="sms")
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
