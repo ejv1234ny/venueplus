@@ -40,6 +40,10 @@ def _send_resend(to: str, subject: str, html: str, text: Optional[str] = None) -
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Resend's API is behind Cloudflare, which 403s (error 1010) the
+            # default Python-urllib User-Agent. Without this, ALL email silently
+            # fails. Do not remove.
+            "User-Agent": "VenuePlus/1.0 (+https://venueplus.net)",
         },
     )
     try:
