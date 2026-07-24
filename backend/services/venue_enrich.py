@@ -60,6 +60,67 @@ def places_lookup(name: str, city: str, key: str) -> dict | None:
             "lat": loc.get("latitude"), "lon": loc.get("longitude")}
 
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_BAD_EMAIL = ("sentry", "wixpress", "example.", "godaddy", "domainprivacy",
+              "@2x", ".png", ".jpg", ".jpeg", ".gif", ".webp", "noreply",
+              "no-reply", "yourdomain", "email@", "user@", "name@", "sentry.io")
+_GOOD_LOCAL = ("info", "contact", "hello", "events", "event", "booking",
+               "bookings", "sales", "office", "reservations", "hi", "inquiries",
+               "admin", "team", "rentals")
+
+
+def _fetch_html(url: str, timeout: int = 15) -> str:
+    if not url.startswith("http"):
+        url = "https://" + url
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(600_000).decode("utf-8", "replace")
+
+
+def find_contact_email(website: str | None) -> str | None:
+    """Scrape a business website for a contact email. Checks the homepage then
+    common contact pages; prefers mailto: links, domain-matching addresses, and
+    role inboxes (info@/contact@/events@...). Returns the best candidate or None."""
+    if not website:
+        return None
+    domain = re.sub(r"^https?://", "", website).lstrip("/").split("/")[0]
+    domain = re.sub(r"^www\.", "", domain).lower()
+    base = website.rstrip("/")
+    pages = [website] + [base + p for p in ("/contact", "/contact-us", "/about", "/rentals", "/events")]
+
+    found: list[str] = []
+    for page in pages:
+        try:
+            html = _fetch_html(page)
+        except Exception:
+            continue
+        found += [m.strip().lower() for m in re.findall(r'mailto:([^"\'?>\s]+)', html, re.I)]
+        found += [m.strip().lower() for m in _EMAIL_RE.findall(html)]
+        if found:
+            break
+
+    def ok(e: str) -> bool:
+        if any(b in e for b in _BAD_EMAIL):
+            return False
+        return bool(re.fullmatch(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", e))
+
+    cands = [e for e in dict.fromkeys(found) if ok(e)]
+    if not cands:
+        return None
+
+    def score(e: str) -> int:
+        local, _, dom = e.partition("@")
+        s = 0
+        if domain and (dom == domain or dom.endswith("." + domain) or domain.endswith("." + dom)):
+            s += 2
+        if local in _GOOD_LOCAL:
+            s += 1
+        return -s
+
+    cands.sort(key=score)
+    return cands[0]
+
+
 def _geo_query(lead: VenueLead) -> str:
     """Best free-geocode query: the street address baked into `area` (in parens)
     if present, else name + city."""
