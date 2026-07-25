@@ -95,27 +95,28 @@ def test_providers_operate_invites_new_candidates(session, patched_reads):
         "Austin Event Catering", "Lens & Light Photo"}
     # missing-coverage category (catering) is prioritised first
     assert invites[0].args["candidate"]["name"] == "Austin Event Catering"
-    # no existing leads in the DB yet -> nothing to outreach this pass
-    assert not [a for a in actions if a.tool == "send_provider_lead_outreach"]
+    # no existing leads with a contact email yet -> nothing to outreach this pass
+    assert not [a for a in actions if a.tool == "send_provider_lead_email"]
 
 
-def test_providers_operate_outreaches_existing_leads(session, patched_reads):
+def test_providers_operate_emails_leads_with_contact(session, patched_reads):
     from services import provider_leads as pl
     from models import ProviderOutreach
     lead = pl.create_lead(session, "Austin", {
         "name": "Copper Shaker", "category": "bartending",
         "tags": {"phone": "(512) 555-0199"}})
+    lead.contact_email = "hello@coppershaker.example"   # scraped from its site
     session.commit()
     actions = ProvidersAgent().operate(session, "Austin")
-    outreach = [a for a in actions if a.tool == "send_provider_lead_outreach"]
+    outreach = [a for a in actions if a.tool == "send_provider_lead_email"]
     assert any(a.args["lead_id"] == lead.id for a in outreach)
     assert all(a.risk == RiskLevel.OUTBOUND for a in outreach)
-    # once recorded as contacted, it's not texted again
+    # once recorded as contacted, it's not emailed again
     session.add(ProviderOutreach(provider_id=lead.id))
     session.commit()
     again = ProvidersAgent().operate(session, "Austin")
     assert not any(a.args["lead_id"] == lead.id
-                   for a in again if a.tool == "send_provider_lead_outreach")
+                   for a in again if a.tool == "send_provider_lead_email")
 
 
 # --- integration: a live seed run creates real inactive lead rows ---------- #

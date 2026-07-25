@@ -160,6 +160,7 @@ class ServiceProvider(Base):
     total_reviews = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     is_claimed = Column(Boolean, default=True, nullable=False)  # false = unclaimed seeded directory listing
+    contact_email = Column(String)  # real outreach email for a lead (scraped from its website)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

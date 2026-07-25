@@ -327,6 +327,39 @@ def create_provider_invite(args: dict, ctx: "ToolContext") -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def send_provider_lead_email(args: dict, ctx: "ToolContext") -> dict:
+    """Email an existing INACTIVE provider lead (uses its scraped contact_email)
+    to recruit it, and record the outreach so it isn't contacted twice."""
+    if ctx.dry_run:
+        return _dry("send_provider_lead_email", args,
+                    "email an existing provider lead to join VenuePlus")
+    try:
+        from models import ServiceProvider, ProviderOutreach
+        from services import email as email_svc
+        prov = ctx.db.query(ServiceProvider).filter(
+            ServiceProvider.id == args.get("lead_id")).first()
+        if not prov:
+            return {"ok": False, "skipped": "provider lead not found"}
+        if not prov.contact_email:
+            return {"ok": False, "skipped": "no contact email on provider lead"}
+        cat = getattr(prov.service_category, "value", str(prov.service_category))
+        subject = f"Get booked for events on VenuePlus (free beta) — {prov.service_name}"
+        html = (f"<p>Hi {prov.service_name} team,</p>"
+                f"<p>VenuePlus is a new Austin marketplace that books event hosts the "
+                f"on-site services they need — including {cat}. Listing is free during our "
+                "beta (0% platform fee), it's non-exclusive, and we send you the jobs.</p>"
+                "<p>Reply and we'll set up your profile in a few minutes.</p>")
+        res = email_svc.send(prov.contact_email, subject, html)
+        if res.get("ok"):
+            if not ctx.db.query(ProviderOutreach).filter(
+                    ProviderOutreach.provider_id == prov.id).first():
+                ctx.db.add(ProviderOutreach(provider_id=prov.id, channel="email"))
+            ctx.db.flush()
+        return {"ok": bool(res.get("ok")), "sent_to": prov.contact_email, "backend": res.get("backend")}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def send_provider_lead_outreach(args: dict, ctx: "ToolContext") -> dict:
     """Text an existing INACTIVE provider lead to recruit it, and record the
     outreach (ProviderOutreach) so it isn't contacted twice."""
@@ -572,6 +605,8 @@ REGISTRY: dict[str, Tool] = {t.name: t for t in [
          "List providers we already have + coverage gaps by category", list_existing_providers),
     Tool("create_provider_invite", RiskLevel.INTERNAL_WRITE,
          "Create a provisional provider lead from a candidate", create_provider_invite),
+    Tool("send_provider_lead_email", RiskLevel.OUTBOUND,
+         "Email an existing provider lead (uses scraped contact email)", send_provider_lead_email),
     Tool("send_provider_lead_outreach", RiskLevel.OUTBOUND,
          "Text an existing provider lead to recruit it", send_provider_lead_outreach),
     Tool("send_provider_sms", RiskLevel.OUTBOUND,

@@ -184,7 +184,7 @@ class ProvidersAgent(BaseAgent):
         "search_providers",              # read   -- public candidate businesses
         "list_existing_providers",       # read   -- what we have + coverage gaps
         "create_provider_invite",        # write  -- internal lead record
-        "send_provider_lead_outreach",   # outbound -- recruit an existing lead
+        "send_provider_lead_email",      # outbound -- email an existing lead
     )
     system_prompt = (
         "You are the Service Provider Supply Agent for VenuePlus, a marketplace "
@@ -254,29 +254,27 @@ class ProvidersAgent(BaseAgent):
             if limit and invites >= limit:
                 break
 
-        # 2) Outreach: work the existing lead list — text inactive provider
-        #    leads that serve this city, have a phone, and haven't been reached
-        #    (gated for human approval; ProviderOutreach prevents re-texting).
+        # 2) Outreach: work the existing lead list — EMAIL inactive provider
+        #    leads that serve this city and have a scraped contact email, and
+        #    haven't been reached (gated; ProviderOutreach prevents re-emailing).
         from models import ServiceProvider, ProviderOutreach
-        from services import provider_leads as pl
         contacted = {r.provider_id for r in db.query(ProviderOutreach).all()}
-        queued = _queued_lead_ids(db, "send_provider_lead_outreach")
+        queued = _queued_lead_ids(db, "send_provider_lead_email")
         sent = 0
         for p in (db.query(ServiceProvider)
-                  .filter(ServiceProvider.is_active.is_(False)).limit(1000).all()):
+                  .filter(ServiceProvider.is_active.is_(False),
+                          ServiceProvider.contact_email.isnot(None)).limit(1000).all()):
             if p.id in contacted or p.id in queued:
                 continue
             areas = p.service_area_cities or []
             if city and not any(str(city).lower() in str(a).lower() for a in areas):
                 continue
-            if not pl.lead_phone(db, p):
-                continue
             actions.append(PlannedAction(
-                "send_provider_lead_outreach", RiskLevel.OUTBOUND,
+                "send_provider_lead_email", RiskLevel.OUTBOUND,
                 {"lead_id": p.id, "city": city},
-                f"Text provider lead '{p.service_name}' to join"))
+                f"Email provider lead '{p.service_name}' to join"))
             sent += 1
-            if sent >= (limit or 15):
+            if sent >= (limit or 50):
                 break
         return actions
 

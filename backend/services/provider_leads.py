@@ -82,6 +82,16 @@ def slug(s: str) -> str:
 _PHONE_RE = re.compile(r"(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}")
 
 
+_URL_RE = re.compile(r"https?://[^\s'\"]+")
+
+
+def lead_website(provider) -> str | None:
+    """Best-effort website for a provider lead — parsed from the description
+    blob where create_lead stores the source tags (incl. 'website')."""
+    m = _URL_RE.search(provider.description or "")
+    return m.group(0).rstrip("'\").,") if m else None
+
+
 def lead_phone(db, provider) -> str | None:
     """Best-effort phone for a provider lead: the lead user's ``phone`` if set
     (newer leads store it there), else parsed from the description (older leads
