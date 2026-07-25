@@ -119,31 +119,24 @@ class VenuesAgent(BaseAgent):
 
         # 2) Outreach: work the existing prospect list — email leads that have a
         #    contact and haven't been reached (gated for human approval).
+        # Email-first: only queue outreach for leads with an email (SMS has no
+        # provider configured). Phone-only leads wait until enriched with email.
         from models import VenueLead, VenueLeadStatus
-        from sqlalchemy import or_
-        queued = (_queued_lead_ids(db, "send_venue_lead_outreach")
-                  | _queued_lead_ids(db, "send_venue_lead_sms"))
+        queued = _queued_lead_ids(db, "send_venue_lead_outreach")
         q = db.query(VenueLead).filter(
             VenueLead.status == VenueLeadStatus.NEW,
             VenueLead.outreach_sent.is_(False),
-            or_(VenueLead.email.isnot(None), VenueLead.phone.isnot(None)))
+            VenueLead.email.isnot(None))
         if city:
             q = q.filter(VenueLead.city == city)
-        cap = 50
-        n = 0
+        cap, n = 50, 0
         for lead in q.limit(cap + len(queued)).all():
             if lead.id in queued:
                 continue
-            if lead.email:   # prefer email; else text
-                actions.append(PlannedAction(
-                    "send_venue_lead_outreach", RiskLevel.OUTBOUND,
-                    {"lead_id": lead.id, "city": city},
-                    f"Email venue prospect '{lead.name}' to list"))
-            else:
-                actions.append(PlannedAction(
-                    "send_venue_lead_sms", RiskLevel.OUTBOUND,
-                    {"lead_id": lead.id, "city": city},
-                    f"Text venue prospect '{lead.name}' to list"))
+            actions.append(PlannedAction(
+                "send_venue_lead_outreach", RiskLevel.OUTBOUND,
+                {"lead_id": lead.id, "city": city},
+                f"Email venue prospect '{lead.name}' to list"))
             n += 1
             if n >= cap:
                 break
@@ -274,7 +267,7 @@ class ProvidersAgent(BaseAgent):
                 {"lead_id": p.id, "city": city},
                 f"Email provider lead '{p.service_name}' to join"))
             sent += 1
-            if sent >= (limit or 50):
+            if sent >= 50:   # outreach cap independent of the discovery limit
                 break
         return actions
 

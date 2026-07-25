@@ -107,15 +107,13 @@ def test_venues_agent_roots_outreach_from_leads(session):
     assert outreach[0].args["lead_id"] == lead.id
 
 
-def test_venues_agent_texts_phone_only_leads(session):
-    # a phone-only prospect (no email) should be queued as an SMS, not email
+def test_venues_agent_skips_phone_only_leads(session):
+    # email-first: a phone-only prospect (no email) is NOT queued for outreach
     lead = VenueLead(name="Warehouse X", city="Austin", phone="(512) 555-0177")
     session.add(lead); session.commit()
     actions = VenuesAgent().operate(session, "Austin", live=False)
-    sms = [a for a in actions if a.tool == "send_venue_lead_sms" and a.args["lead_id"] == lead.id]
-    email = [a for a in actions if a.tool == "send_venue_lead_outreach" and a.args["lead_id"] == lead.id]
-    assert len(sms) == 1 and sms[0].risk == RiskLevel.OUTBOUND
-    assert not email
+    mine = [a for a in actions if a.args.get("lead_id") == lead.id]
+    assert not mine  # no email (and SMS path removed)
 
 
 # --- API endpoint ---------------------------------------------------------- #
