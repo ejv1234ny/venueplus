@@ -6,11 +6,12 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 import { AuthProvider } from '@/components/AuthProvider';
 import PayoutOnboardingBanner from '@/components/PayoutOnboardingBanner';
+import PWARegister from '@/components/PWARegister';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://venueplus.vercel.app'),
+  metadataBase: new URL('https://www.venueplus.net'),
   title: {
     default: 'VenuePlus - Event Venues & Services Marketplace',
     template: '%s | VenuePlus',
@@ -18,6 +19,11 @@ export const metadata: Metadata = {
   description: 'Book unique event spaces and essential services all in one place',
   applicationName: 'VenuePlus',
   manifest: '/site.webmanifest',
+  appleWebApp: {
+    capable: true,          // full-screen standalone when added to iOS home screen
+    title: 'VenuePlus',
+    statusBarStyle: 'default',
+  },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -63,6 +69,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider>
+          <PWARegister />
           <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
           <Navbar />
           <PayoutOnboardingBanner />
