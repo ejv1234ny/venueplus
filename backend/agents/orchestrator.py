@@ -188,7 +188,10 @@ def _dispatch(db: Session, run: AgentRun, agent_name: str,
         executed = False
         if decision == Decision.AUTO:
             result = tools.execute(pa.tool, pa.args or {}, ctx)
-            executed = True
+            # A dry-run stub is a plan, not an execution — only mark executed
+            # when the tool actually ran, so "executed" never hides the fact
+            # that nothing happened.
+            executed = not (isinstance(result, dict) and result.get("dry_run"))
             usage.record(pa.risk, pa.args)  # count autonomous outreach/spend
             logger.info("executed %s/%s -> %s", agent_name, pa.tool, result)
 
@@ -287,18 +290,25 @@ def run_seed(db: Session, city: str, config: AutonomyConfig | None = None,
 
 
 def resolve_escalation(db: Session, escalation: AgentEscalation, *,
-                       approve: bool, admin_id: int) -> AgentRun:
+                       approve: bool, admin_id: int | None) -> dict:
     """Approve or reject an escalation, then recompute its run.
 
     Approving executes the gated action through its tool handler (dry-run for
-    write/outbound unless AGENTS_LIVE) and marks it executed; rejecting leaves
-    it un-executed and blocks its job. Approval is the human gate -- there is no
-    auto path here.
+    write/outbound unless AGENTS_LIVE); rejecting leaves it un-executed and
+    blocks its job. Approval is the gate — humans via the dashboard/Telegram,
+    or the autonomy engine within its policy envelope (``agents/autonomy.py``).
+
+    Returns ``{"run": AgentRun, "result": dict | None}`` where ``result`` is
+    the tool handler's return value (None on reject). ``action.executed`` is
+    only set when the tool actually ran live — a dry-run stub (AGENTS_LIVE
+    off) or a failed send does NOT count as executed, so the audit trail never
+    claims an email went out when it didn't.
     """
     escalation.status = (EscalationStatus.APPROVED if approve
                          else EscalationStatus.REJECTED)
     escalation.resolved_by = admin_id
     escalation.resolved_at = func.now()
+    result = None
     if approve and escalation.action_id:
         action = db.query(AgentAction).filter(
             AgentAction.id == escalation.action_id).first()
@@ -306,10 +316,12 @@ def resolve_escalation(db: Session, escalation: AgentEscalation, *,
             ctx = ToolContext(db=db, live=False, dry_run=not _agents_live())
             result = tools.execute(action.tool, action.args or {}, ctx)
             logger.info("approved+executed %s -> %s", action.tool, result)
-            action.executed = True
+            action.executed = bool(isinstance(result, dict)
+                                   and result.get("ok")
+                                   and not result.get("dry_run"))
     db.flush()
     run = db.query(AgentRun).filter(AgentRun.id == escalation.run_id).first()
-    return recompute(db, run)
+    return {"run": recompute(db, run), "result": result}
 
 
 class FleetDisabledError(RuntimeError):

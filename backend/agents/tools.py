@@ -208,7 +208,7 @@ def send_venue_outreach_email(args: dict, ctx: "ToolContext") -> dict:
         html = (f"<p>Hi {name},</p><p>VenuePlus is a marketplace for event venues "
                 "and on-site services. Listing is free during our beta and takes a "
                 "few minutes.</p><p>Reply and we'll help you get set up.</p>")
-        res = email_svc.send(to, subject, html)
+        res = email_svc.send_outreach(to, subject, html)
         return {"ok": bool(res.get("ok")), "sent_to": to, "backend": res.get("backend")}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -298,7 +298,7 @@ def send_venue_lead_outreach(args: dict, ctx: "ToolContext") -> dict:
                 "you just say yes. We’re in free beta (0% platform fee), so hosting income "
                 f"flows to you.</p>{pitch}"
                 "<p>Worth a 10-minute call to set up a listing?</p>")
-        res = email_svc.send(lead.email, subject, html)
+        res = email_svc.send_outreach(lead.email, subject, html)
         if res.get("ok"):
             lead.outreach_sent = True
             lead.status = VenueLeadStatus.CONTACTED
@@ -349,7 +349,7 @@ def send_provider_lead_email(args: dict, ctx: "ToolContext") -> dict:
                 f"on-site services they need — including {cat}. Listing is free during our "
                 "beta (0% platform fee), it's non-exclusive, and we send you the jobs.</p>"
                 "<p>Reply and we'll set up your profile in a few minutes.</p>")
-        res = email_svc.send(prov.contact_email, subject, html)
+        res = email_svc.send_outreach(prov.contact_email, subject, html)
         if res.get("ok"):
             if not ctx.db.query(ProviderOutreach).filter(
                     ProviderOutreach.provider_id == prov.id).first():
@@ -536,7 +536,7 @@ def send_creator_outreach_email(args: dict, ctx: "ToolContext") -> dict:
             return {"ok": False, "skipped": "no email on creator lead"}
         copy = cl.draft_outreach_copy(lead, lead.city or "")
         html = "<p>" + copy["body"].replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
-        res = email_svc.send(lead.email, copy["subject"], html)
+        res = email_svc.send_outreach(lead.email, copy["subject"], html)
         if res.get("ok"):
             lead.outreach_sent = True
             lead.status = CreatorLeadStatus.CONTACTED

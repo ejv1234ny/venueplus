@@ -28,6 +28,8 @@ Commands::
   /approve <id>           approve a gated action
   /reject <id>            reject a gated action
   /kill on|off            disable / enable the fleet (kill switch)
+  /autonomy ...           auto-outreach engine: status | on | off | pause |
+                          resume | stage 0-3 (see agents/autonomy.py)
   /help                   this help
 
 The bot only ever *coordinates* the COO; the guardrails (money_movement + legal
@@ -54,12 +56,19 @@ from agents.llm import LLMProvider
 router = APIRouter()
 
 _COMMANDS = {"goal", "status", "runs", "run", "escalations",
-             "approve", "reject", "kill", "help", "start"}
+             "approve", "reject", "kill", "help", "start", "autonomy"}
 
 
 def _allowed_chat_ids() -> set[str]:
     raw = os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "")
     return {c.strip() for c in raw.split(",") if c.strip()}
+
+
+def notify_operator(text: str) -> None:
+    """Push a message to every allowlisted operator chat. Used by the autonomy
+    engine (tick digests, circuit-breaker alerts) — best-effort, never raises."""
+    for chat_id in _allowed_chat_ids():
+        send_message(chat_id, text)
 
 
 def send_message(chat_id: str | int, text: str) -> None:
@@ -132,6 +141,9 @@ _INTERPRETER_SYSTEM = (
     "\"no, skip that\" -> {\"command\":\"reject\",\"argument\":\"\"}\n"
     "\"show me the last run\" -> {\"command\":\"run\",\"argument\":\"latest\"}\n"
     "\"pause everything\" -> {\"command\":\"kill\",\"argument\":\"on\"}\n"
+    "- autonomy (arg = \"status\", \"on\", \"off\", \"pause\", \"resume\", "
+    "or \"stage N\"): anything about the automatic outreach engine, autosend, "
+    "auto-approval, the drip, sending limits/stages.\n"
     "Respond with JSON only."
 )
 
@@ -165,6 +177,9 @@ def _heuristic(text: str) -> tuple[str, str]:
     t = (text or "").strip().lower()
     if not t:
         return ("help", "")
+    if "autonomy" in t or "autosend" in t or "auto-send" in t:
+        arg = re.sub(r".*?(autonomy|autosend|auto-send)\s*", "", t, count=1)
+        return ("autonomy", arg)
     if any(w in t for w in ("status", "how are", "how's it", "how is it",
                             "what's up", "whats up", "are we live", "update")):
         return ("status", "")
@@ -269,8 +284,9 @@ HELP = (
     "• \"approve the social post\" / \"reject it\" — decide on a pending action\n"
     "• \"show me the last run\" — details on a run\n"
     "• \"pause everything\" / \"resume\" — kill switch\n"
+    "• \"/autonomy status\" — the auto-outreach engine (on/off, stage, pause)\n"
     "Slash commands (/goal, /status, /runs, /run, /escalations, /approve, "
-    "/reject, /kill) work too."
+    "/reject, /kill, /autonomy) work too."
 )
 
 
@@ -365,6 +381,62 @@ def _dispatch(db: Session, cmd: str, arg: str) -> str:
             return (f"Done — I approved {e.tool} (#{e.id}). "
                     "The run will carry on from there.")
         return (f"Okay — I rejected {e.tool} (#{e.id}); it won't run.")
+
+    if cmd == "autonomy":
+        from agents import autonomy as auto
+        settings = auto.get_settings(db)
+        a = (arg or "").strip().lower()
+        if a in ("", "status"):
+            brk = auto.breaker_status(db)
+            cap = auto.STAGE_CAPS.get(settings.stage, 0)
+            sent = auto.sent_today(db, settings)
+            if settings.paused:
+                state = f"paused 🔴 ({settings.pause_reason or 'manual'})"
+            elif settings.enabled:
+                state = "on 🟢"
+            else:
+                state = "off ⚪"
+            return (f"Autonomy is {state} — stage {settings.stage} "
+                    f"(cap {cap}/day), sent today {sent}, window "
+                    f"{settings.send_window_start}:00–{settings.send_window_end}:00 "
+                    f"{settings.timezone}. Trailing bounce rate: "
+                    f"{brk['bounce_rate_pct']}% over {brk['window']} sends.")
+        if a in ("on", "enable", "start"):
+            settings.enabled = True
+            settings.paused = False
+            settings.pause_reason = None
+            db.commit()
+            return (f"Autonomy is ON 🟢 — queued outreach drains automatically "
+                    f"at stage {settings.stage} "
+                    f"({auto.STAGE_CAPS.get(settings.stage, 0)}/day) inside the "
+                    f"send window. Say \"/autonomy pause\" any time to stop it.")
+        if a in ("off", "disable", "stop"):
+            settings.enabled = False
+            db.commit()
+            return ("Autonomy is OFF ⚪ — outreach goes back to manual "
+                    "approvals only.")
+        if a == "pause":
+            settings.paused = True
+            settings.pause_reason = "paused via Telegram"
+            db.commit()
+            return ("Autonomy paused 🔴 — nothing auto-sends until you say "
+                    "\"/autonomy resume\".")
+        if a in ("resume", "unpause"):
+            settings.paused = False
+            settings.pause_reason = None
+            db.commit()
+            return "Autonomy resumed 🟢."
+        m = re.match(r"^stage\s*(\d)$", a)
+        if m:
+            n = int(m.group(1))
+            if n not in auto.STAGE_CAPS:
+                return "Stage must be 0–3 (0=off, 1=10/day, 2=25/day, 3=50/day)."
+            settings.stage = n
+            db.commit()
+            return (f"Stage set to {n} — the daily cap is now "
+                    f"{auto.STAGE_CAPS[n]} emails/day.")
+        return ("Autonomy commands: /autonomy status · on · off · pause · "
+                "resume · stage 0-3")
 
     if cmd == "kill":
         a = (arg or "").strip().lower()

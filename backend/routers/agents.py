@@ -147,6 +147,36 @@ def seed_cron(request: Request, city: str | None = None,
             "readiness": readiness.market_readiness(db, target)}
 
 
+@router.post("/autonomy/tick")
+def autonomy_tick(request: Request, db: Session = Depends(get_db)):
+    """One autonomy drain pass (see ``agents/autonomy.py``): approve queued
+    outreach inside the policy envelope. CRON_SECRET-gated like the other
+    crons; also runs every 15 min via ``scripts/drain_escalations_cron.py``.
+    """
+    expected = os.getenv("CRON_SECRET")
+    if expected and request.headers.get("authorization", "") != f"Bearer {expected}":
+        raise HTTPException(401, "Invalid cron secret")
+    from agents import autonomy
+    out = autonomy.run_tick(db)
+    db.commit()
+    return out
+
+
+@router.get("/autonomy/status")
+def autonomy_status(admin: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """Autonomy envelope + live counters for the dashboard."""
+    from agents import autonomy
+    s = autonomy.get_settings(db)
+    return {"enabled": s.enabled, "stage": s.stage, "paused": s.paused,
+            "pause_reason": s.pause_reason,
+            "cap": autonomy.STAGE_CAPS.get(s.stage, 0),
+            "sent_today": autonomy.sent_today(db, s),
+            "breaker": autonomy.breaker_status(db),
+            "send_window": [s.send_window_start, s.send_window_end],
+            "timezone": s.timezone}
+
+
 @router.post("/prospects/import")
 def import_prospects(body: ProspectsImport, admin: User = Depends(require_admin),
                      db: Session = Depends(get_db)):
