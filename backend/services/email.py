@@ -6,6 +6,7 @@ Backends:
 """
 import json
 import os
+import urllib.parse
 import urllib.request
 from typing import Optional
 
@@ -15,9 +16,12 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "VenuePlus <no-reply@venueplus.local>")
 EMAIL_REPLY_TO = os.getenv("EMAIL_REPLY_TO")
 
 
-def _send_console(to: str, subject: str, html: str, text: Optional[str] = None) -> dict:
+def _send_console(to: str, subject: str, html: str, text: Optional[str] = None,
+                  headers: Optional[dict] = None) -> dict:
     print("=" * 60)
     print(f"[email:console] TO: {to}")
+    if headers:
+        print(f"[email:console] HEADERS: {headers}")
     print(f"[email:console] FROM: {EMAIL_FROM}")
     if EMAIL_REPLY_TO:
         print(f"[email:console] REPLY-TO: {EMAIL_REPLY_TO}")
@@ -27,11 +31,14 @@ def _send_console(to: str, subject: str, html: str, text: Optional[str] = None) 
     return {"backend": "console", "ok": True}
 
 
-def _send_resend(to: str, subject: str, html: str, text: Optional[str] = None) -> dict:
+def _send_resend(to: str, subject: str, html: str, text: Optional[str] = None,
+                 headers: Optional[dict] = None) -> dict:
     api_key = os.getenv("RESEND_API_KEY")
     body = {"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html}
     if text:
         body["text"] = text
+    if headers:
+        body["headers"] = headers           # e.g. List-Unsubscribe
     if EMAIL_REPLY_TO:
         body["reply_to"] = EMAIL_REPLY_TO   # replies land in a real inbox
     req = urllib.request.Request(
@@ -54,10 +61,71 @@ def _send_resend(to: str, subject: str, html: str, text: Optional[str] = None) -
         return {"backend": "resend", "ok": False, "error": str(e)}
 
 
-def send(to: str, subject: str, html: str, text: Optional[str] = None) -> dict:
+def send(to: str, subject: str, html: str, text: Optional[str] = None,
+         headers: Optional[dict] = None) -> dict:
     if os.getenv("RESEND_API_KEY"):
-        return _send_resend(to, subject, html, text)
-    return _send_console(to, subject, html, text)
+        return _send_resend(to, subject, html, text, headers)
+    return _send_console(to, subject, html, text, headers)
+
+
+# ---------- Outreach (cold email compliance) ----------
+# All agent outreach goes through send_outreach(): suppression check +
+# CAN-SPAM footer (physical address + working unsubscribe) + List-Unsubscribe
+# headers. Transactional mail (verification, bookings, offers) keeps using
+# send() and is intentionally footer-free.
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "https://api.venueplus.net")
+# CAN-SPAM requires a physical postal address on commercial email. Set
+# POSTAL_ADDRESS in the environment to the real mailing address.
+POSTAL_ADDRESS = os.getenv("POSTAL_ADDRESS", "VenuePlus, Austin, TX")
+
+
+def unsubscribe_link(to: str) -> str:
+    """HMAC-signed one-click unsubscribe URL (see routers/webhooks.py)."""
+    import hashlib
+    import hmac
+    secret = os.getenv("SECRET_KEY", "dev")
+    email = to.strip().lower()
+    token = hmac.new(secret.encode(), email.encode(),
+                     hashlib.sha256).hexdigest()[:20]
+    q = urllib.parse.urlencode({"email": email, "token": token})
+    return f"{PUBLIC_API_URL}/api/webhooks/unsubscribe?{q}"
+
+
+def _is_suppressed(to: str) -> bool:
+    """Best-effort do-not-contact check; never blocks on infra errors."""
+    try:
+        from database import SessionLocal
+        from models_agents import OutreachSuppression
+        db = SessionLocal()
+        try:
+            return db.query(OutreachSuppression).filter(
+                OutreachSuppression.email == to.strip().lower()
+            ).first() is not None
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
+def send_outreach(to: str, subject: str, html: str,
+                  text: Optional[str] = None) -> dict:
+    """Cold/marketing email path: suppression check + compliance footer +
+    List-Unsubscribe (incl. RFC 8058 one-click)."""
+    if _is_suppressed(to):
+        return {"backend": "suppressed", "ok": False, "suppressed": True,
+                "skipped": "recipient is on the suppression list"}
+    link = unsubscribe_link(to)
+    footer = (
+        '<hr style="border:none;border-top:1px solid #ddd;margin-top:24px">'
+        '<p style="font-size:12px;color:#888">You\'re receiving this one-time '
+        'note because your business is publicly listed. '
+        f'{POSTAL_ADDRESS}. <a href="{link}">Unsubscribe</a> and we won\'t '
+        'email you again.</p>')
+    if text:
+        text = f"{text}\n\n--\n{POSTAL_ADDRESS}. Unsubscribe: {link}"
+    headers = {"List-Unsubscribe": f"<{link}>",
+               "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+    return send(to, subject, html + footer, text, headers=headers)
 
 
 # ---------- Templates ----------
